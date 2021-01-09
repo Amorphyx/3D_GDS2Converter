@@ -1,6 +1,3 @@
-# 3D_GDS2Converter
-Converts GDS2 text files into 3D STEP models using FreeCAD and XSection scripts.
-
 # Overview
 3D_GDS2Converter was designed for the conversion of 2D KLayout/GDS2 models to 3D FreeCAD/STEP models using XSection scripts (.xs). 
 
@@ -14,7 +11,8 @@ Converts GDS2 text files into 3D STEP models using FreeCAD and XSection scripts.
 
 To run the program download or clone the repository files to any local location. 
 Open FreeCAD and go to Macro -> Macros... then select Create and choose a name with the Python extension (.py). 
-INSERT PICTURES OF ABOVE
+
+[macroGIF]
 
 The new macro will automatically open in edit mode. Copy over the contents of the main_PvX.py file into the extension. From here the macro can be run (ctrl+F6) and then the file 
 location of the other python modules can be selected. 
@@ -94,3 +92,4 @@ This function creates a planarized layer on top of all the other layers, at a se
 
 [XSection DocReference]: https://sourceforge.net/p/xsectionklayout/wiki/DocReference/#xs-file-reference
 [etch method]: https://sourceforge.net/p/xsectionklayout/wiki/DocEtch/
+[macroGIF]: https://github.com/Amorphyx/3D_GDS2Converter/blob/main/Images/macro2.gif
