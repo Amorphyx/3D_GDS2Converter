@@ -30,7 +30,11 @@ running the program a message will pop up requesting if the objects should be ex
 
 _Note: all function calls and standard options used in the XSection tool inside KLayout must be included. I.e. using '.inverted' creates standard features and not including '.inverted' results in vias/holes being created._
 
-**Currently implemented functions:**  INCLUDE PICTURES
+**Currently implemented functions:**
+
+![alt text][featuresGIF]
+
+
 ### bulk
 Uses an outline layer to create a substrate (auto-detects largest object to use as outline/substrate layer)
 
@@ -93,3 +97,4 @@ This function creates a planarized layer on top of all the other layers, at a se
 [XSection DocReference]: https://sourceforge.net/p/xsectionklayout/wiki/DocReference/#xs-file-reference
 [etch method]: https://sourceforge.net/p/xsectionklayout/wiki/DocEtch/
 [macroGIF]: https://github.com/Amorphyx/3D_GDS2Converter/blob/main/Images/macro2.gif
+[featuresGIF]: https://github.com/Amorphyx/3D_GDS2Converter/blob/main/Images/features.gif
