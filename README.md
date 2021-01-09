@@ -12,7 +12,7 @@
 To run the program download or clone the repository files to any local location. 
 Open FreeCAD and go to Macro -> Macros... then select Create and choose a name with the Python extension (.py). 
 
-[macroGIF]
+![alt text][macroGIF]
 
 The new macro will automatically open in edit mode. Copy over the contents of the main_PvX.py file into the extension. From here the macro can be run (ctrl+F6) and then the file 
 location of the other python modules can be selected. 
