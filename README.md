@@ -19,7 +19,6 @@ location of the other python modules can be selected.
 Once the location of the supporting modules has been selected a menu for selecting the input files will appear in which the GDS2 (.txt) and the cross section script (.xs) are required; however, the layer properties (.lyp) file is optional and can be used for coloring the layers (unique layer names matching the layer names in the cross section script are required). 
 
 _Note: The program is currently designed on a .001 micron scale. To use a different scale go to the supporting_functions_PvX script and change the division value (from 10) to the desired value (relative to thickness) inside the get_xy_points function._
-INSERT PICTURES OF ABOVE
 
 The code has the option to export all final objects as STEP files, each object will be it's own STEP file so that they can be imported and viewed as individual layers. When
 running the program a message will pop up requesting if the objects should be exported - click Affirmative and select the output folder and they will be exported to that folder.
@@ -67,14 +66,14 @@ This function finds and returns the layer names. These names are used to name th
 This function creates a planarized layer on top of all the other layers, at a set height. The height of this planarized layer is only adjustable inside the code (Planarize_PvX file). Currently, no specific options have been created for this function - any included options will be ignored and a simple planarized layer will be created on top.
 
 
-#### Limitations 
+#### Limitations / Work in Progress
 - 3D_GDS2Converter is designed for work for a single layout and may not work properly for multiple different layouts that are not intersecting each other. 
 - Some functions of the cross section tool for KLayout have not been implemented (some have no plans to be added at this time). 
 - Curved objects are currently not accepted as no function to properly chamfer them has been introduced, this is planned for a future version.
 - Biasing of objects may not work completely for complex objects. 
 - Fillet has not been implemented (only straight chamfers)
 
-#### Coming Soon
+#### Coming Soon / Future Goals
 - FreeCAD AddOn support.
 - Version control and better Git access.
 - Improved runtime, optimization, and better storage management (should improve RAM usage significantly). 
@@ -90,7 +89,7 @@ This function creates a planarized layer on top of all the other layers, at a se
 ### Warnings
 - Due to the complexity of this program, and the current lack of optimization, the program can take upwards of 60 minutes to run for non-simple layouts. 
 - This program is not complete and as such there might be errors that occur; most of these errors will be given by FreeCAD and will pertain to an imporper usage of FreeCAD functions inside this program or invalid inputs to this program causing invalid objects inside FreeCAD.
-- This program is RAM intensive, for complex layouts it has been seen spiking at nearly 10 GB of RAM, as such at least 16 GB of RAM is recommended. 
+- This program is RAM intensive, for complex layouts it has been seen spiking at nearly 10 GB of RAM, as such at least 16 GB of RAM is recommended. It is HIGHLY recommended to not run more than 1 instance of this program at once. 
 
 
 
