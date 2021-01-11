@@ -9,14 +9,14 @@
 ## Setup and Usage Instructions
 3D_GDS2Converter is currently setup to use as a FreeCAD Macro. 
 
-To run the program download or clone the repository files to any local location. 
+To run the program, download or clone the repository files to any local location. _Note: Only the "main" folder is required._
 Open FreeCAD and go to Macro -> Macros... then select Create and choose a name with the Python extension (.py). 
 
 ![alt text][macroGIF]
 
-The new macro will automatically open in edit mode. Copy over the contents of the main_PvX.py file into the extension. From here the macro can be run (ctrl+F6) and then the file 
-location of the other python modules can be selected. 
-Once the location of the supporting modules has been selected a menu for selecting the input files will appear in which the GDS2 (.txt) and the cross section script (.xs) are required; however, the layer properties (.lyp) file is optional and can be used for coloring the layers (unique layer names matching the layer names in the cross section script are required). 
+The new macro will automatically open in edit mode. Copy over the contents of the main_PvX.py file into the new macro. From here the macro can be run (ctrl+F6) and then the file 
+location of the supporting python modules can be selected (the other files included in the main folder). 
+Once the location of the supporting modules has been selected, a menu for selecting the input files will appear - the GDS2 (.txt) and the XSection script (.xs) are required; however, the layer properties (.lyp) file is optional and will only be used for coloring the layers (unique layer names matching the layer names in the cross section script are required). 
 
 _Note: The program is currently designed on a .001 micron scale. To use a different scale go to the supporting_functions_PvX script and change the division value (from 10) to the desired value (relative to thickness) inside the get_xy_points function._
 
