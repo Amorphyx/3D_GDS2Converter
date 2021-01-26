@@ -1,6 +1,6 @@
 #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 #                                       Created by AR for Amorphyx, Inc
-#                             Last edit on 07 Jan 2021 - Validated on 07 Jan 2021
+#                             Last edit on 24 Jan 2021 - Validated on 25 Jan 2021
 #
 #                          THIS CODE REQUIRES ALL MODULES IN THIS REPOSITORY TO RUN
 #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -139,61 +139,16 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
     numOfFeatNames = len(featureNames)                                          #Total number of feature names, for offsetting
     numOfChamfNames = len(chamfNames)                                           #Total number of chamfer names, for offsetting
     layerThickness.append(layer_thickness)
+    if len(layerNames) != 0:
+        highestPoint, highestObj = sp.get_highest_point(True,False)                 #Retrieves the highest Z value and the layer associated with it
+    else:
+        highestObj = FreeCAD.ActiveDocument.getObject("Substrate")
+
     if len(FreeCAD.ActiveDocument.Objects) == 1:                                #If only have the substrate, so this is first deposit layer
         for f in range(0,len(all_polygons_dict[layerNum])):                     #Goes through all polygons in given key (layerNum)
             polyLayer = sp.get_xy_points(all_polygons_dict[layerNum][f])        #Converts all to mm
-            '''Below section adds the bias to objects. It takes every vertex and compares it to the next one, one of those vertices gets an addition to x or y
-            and the other vertex gets a subtraction to x or y. This bias currently works as a subtraction (makes the feature smaller) to imitate etching.'''
-            if bias != 0:
-                xChange = False; yChange = False                                #Used so that one vertex does not receive multiple changes on same axis
-                verts = len(polyLayer)
-                xChanges = [bias]*verts; yChanges = [bias]*verts                #Store changes so they are only changed at the end
-                for idx, point in enumerate(polyLayer):
-                    if idx == verts-1:                                          #If looking at last vertex of the shape, the next vertex is the first vertex
-                        next = 0
-                    else:                                                       #Updates the next vertex
-                        next = idx+1
-                    if point[0] == polyLayer[next][0]:                          #Share same x point, update y values (change along x-axis)
-                        if yChange == False:
-                            if point[1] > polyLayer[next][1]:                   #Compares actual value, abs value would cause inverse errors if crossing axis
-                                yChanges[idx] = -bias
-                                yChanges[next] = bias
-                                yChange = True
-                            else:
-                                yChanges[idx] = bias
-                                yChanges[next] = -bias
-                                yChange = True
-                        else:
-                            yChange = False
-                    else:
-                        yChange = False
-                    if point[1] == polyLayer[next][1]:                          #Share same y point, update x values (change along y-axis)
-                        if xChange == False:
-                            if point[0] > polyLayer[next][0]:                   #Compares actual value, abs value would cause inverse errors if crossing axis
-                                xChanges[idx] = -bias
-                                xChanges[next] = bias
-                                xChange = True
-                            else:
-                                xChanges[idx] = bias
-                                xChanges[next] = -bias
-                                xChange = True
-                        else:
-                            xChange = False
-                    else:
-                        xChange = False
-                        #print("Something in bias is not working.")             #Used for debugging
-                #print(len(polyLayer),len(xChanges),len(yChanges))              #Used for debugging
-                #print(xChanges)                                                #Used for debugging
-                #print(yChanges)                                                #Used for debugging
-                for id, point2 in enumerate(polyLayer):                         #Changes the points based off previously found necessary changes
-                    point2[0] = point2[0] + xChanges[id]
-                    point2[1] = point2[1] + yChanges[id]
-                    point2.append(z_value[-1])                                  #Attaches a Z value to every vertex (currently based off the height of last features)
-                polyLayer[0][0] = polyLayer[-1][0]
-                polyLayer[0][1] = polyLayer[-1][1]
-            else:                                                               #If no bias has been given
-                for point in polyLayer:
-                    point.append(z_value[-1])
+            for point in polyLayer:
+                point.append(z_value[-1])
             print("Before layerDevelop Object")                                 #For debugging
             '''Below section creates a face from the vertices and then extrudes it to create the feature, it then creates a new FreeCAD Part and passes
             the object to the taper function'''
@@ -202,14 +157,66 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
                 pts2.append(FreeCAD.Vector(polyLayer[i][0],polyLayer[i][1],polyLayer[i][2])) #FreeCAD.Vector(x,y,z)
             wire=Part.makePolygon(pts2)                                         #Connects all points given above, makes a wire polygon (just a line)
             face=Part.Face(wire)                                                #Creates a face from the wire above
+            if bias != 0:                                                       #If a bias has been given then create a new face
+                face = sp.biasFeatures(face, bias)                              #Calls function that biases the feature and returns a new face
             extrusionLIL1.append(face.extrude(Base.Vector(0,0,layer_thickness)))    #Creates an extrusion from the new face
             #Part.show(extrusionLIL1[f])                                        #Used to show the extrusion object - only used for debugging
             #hmedges = extrusionLIL1[f+numOfExt].Edges                          #Finds all the edges, used for debugging
-            print("Before Chamfer")                                             #For debugging
             featureNames.append("myFeature"+str(f+numOfFeatNames))                                                #Creates new feature name
             featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames[f+numOfFeatNames])) #Creates new feature inside FreeCAD
             featureLIL1[f+numOfFeat].Shape = extrusionLIL1[f+numOfExt]                                            #Adds previous extrusion and the feature shape
-            taper(featureLIL1[-1], layer_thickness, angle, 0)                   #Passes features to taper function to get tapered, passing 0 for topObj as a placeholder
+            print("Before Chamfer")                                             #For debugging
+            loop1Break = False; loop2Break = False#; loop3Break = False
+            curvedCall = False
+            bottomFaces = []
+            for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
+                for idx, vert in enumerate(face.Vertexes):
+                    if idx == (len(face.Vertexes)-1) and round(vert.distToShape(highestObj.Shape)[0],2)==0:  #If the face intersects with the deposition layer then it is at the bottom
+                        faceSurface = face.Surface
+                        pt=Base.Vector(0,1,0)
+                        param = faceSurface.parameter(pt)
+                        #print(param)
+                        norm = face.normalAt(param[0],param[1])
+                        #print(norm)
+                        if abs(norm[2]) != 0:                                       #If the face is oriented to one of the sides then ignore it
+                            bottomFaces.append(face)                        #Append this face to our list, using list versus fusing them because we want all seperate faces
+                            #Part.show(face)                                        #Used for debugging, currently shows the correct bottom faces
+                    elif round(vert.distToShape(highestObj.Shape)[0],2)==0 and (round(vert.Point[2],2) >= z_value[-1]):     #If the entire array has not been inspected then inspect next edge
+                        continue
+                    else:
+                        #print("breaking with z value of {:.2f} and height of {:.2f}".format(z_value[-1], vert.Point[2]))   #For debugging
+                        break
+            for face in bottomFaces:
+                for edge1 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                    edge1Dir = np.array(edge1.tangentAt(edge1.FirstParameter))      #Finds the vector direction of the edge and converts to a numpy array
+                    #Part.show(edge1)
+                    for edge2 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                        edge2Dir = np.array(edge2.tangentAt(edge2.FirstParameter))  #Finds the vector direction of the edge and converts to a numpy array
+                        #Part.show(edge2)
+                        #If any of the edges are not at right angles to each other then consider it unable to be chamfered
+                        if edge1.firstVertex().Point[2] == edge1.lastVertex().Point[2] == edge2.firstVertex().Point[2] == edge2.lastVertex().Point[2]:
+                            cornerAngle = math.degrees(math.acos(np.clip(np.dot(edge1Dir, edge2Dir)/ (np.linalg.norm(edge1Dir)* np.linalg.norm(edge2Dir)), -1, 1)))/90
+                            #print(angle)
+                            if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
+                                print("Non-rectangular object found, skipping taper")
+                                chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
+                                chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                                #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
+                                loop1Break = True; loop2Break = True#; loop3Break = True
+                                curvedCall = True
+                                break
+                        #else:
+                        #    print("Continuing")
+                    if loop2Break == True:
+                        break
+                if loop1Break == True:
+                    break
+            if curvedCall == False:
+                taper(featureLIL1[-1], layer_thickness, angle, 0)                   #Passes features to taper function to get tapered, passing 0 for topObj as a placeholder
+            else:
+                print("Object was Non-rectangular and did not get chamfered")
+                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
             print("After Chamfer")                                              #For debugging
     elif len(FreeCAD.ActiveDocument.Objects) > 1:                               #Already have first layer deposited, these features could be laid on top of previous features
         highestPoint, highestObj = sp.get_highest_point(True,False)             #Finds the highest point and object before the new features are made
@@ -219,58 +226,8 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
         stampObj.Placement.move(FreeCAD.Vector(0,0,layer_thickness+depositionThickness[-1]))# = p1
         for f in range(0,len(all_polygons_dict[layerNum])):                     #Goes through all polygons in given key (layerNum)
             polyLayer = sp.get_xy_points(all_polygons_dict[layerNum][f])        #Converts all to mm
-            '''Below section adds the bias to objects. It takes every vertex and compares it to the next one, one of those vertices gets an addition to x or y
-            and the other vertex gets a subtraction to x or y. This bias currently works as a subtraction (makes the feature smaller) to imitate etching.'''
-            if bias != 0:
-                xChange = False; yChange = False                                #Used so that one vertex does not receive multiple changes on same axis
-                verts = len(polyLayer)
-                xChanges = [bias]*verts; yChanges = [bias]*verts                #Store changes so they are only changed at the end
-                for idx, point in enumerate(polyLayer):
-                    if idx == verts-1:                                          #If looking at last vertex of the shape, the next vertex is the first vertex
-                        next = 0
-                    else:                                                       #Updates the next vertex
-                        next = idx+1
-                    if point[0] == polyLayer[next][0]:                          #Share same x point, update y values (change along x-axis)
-                        if yChange == False:
-                            if point[1] > polyLayer[next][1]:                   #Compares actual value, abs value would cause inverse errors if crossing axis
-                                yChanges[idx] = -bias
-                                yChanges[next] = bias
-                                yChange = True
-                            else:
-                                yChanges[idx] = bias
-                                yChanges[next] = -bias
-                                yChange = True
-                        else:
-                            yChange = False
-                    else:
-                        yChange = False
-                    if point[1] == polyLayer[next][1]:                          #Share same y point, update x values (change along y-axis)
-                        if xChange == False:
-                            if point[0] > polyLayer[next][0]:                   #Compares actual value, abs value would cause inverse errors if crossing axis
-                                xChanges[idx] = -bias
-                                xChanges[next] = bias
-                                xChange = True
-                            else:
-                                xChanges[idx] = bias
-                                xChanges[next] = -bias
-                                xChange = True
-                        else:
-                            xChange = False
-                    else:
-                        xChange = False
-                        #print("Something in bias is not working.")
-                #print(len(polyLayer),len(xChanges),len(yChanges))              #For debugging
-                #print(xChanges)                                                #For debugging
-                #print(yChanges)                                                #For debugging
-                for id, point2 in enumerate(polyLayer):                         #Changes the points based off previously found necessary changes
-                    point2[0] = point2[0] + xChanges[id]
-                    point2[1] = point2[1] + yChanges[id]
-                    point2.append(z_value[-1])                                  #Attaches a Z value to every vertex (currently based off the height of last features)
-                polyLayer[0][0] = polyLayer[-1][0]
-                polyLayer[0][1] = polyLayer[-1][1]
-            else:                                                               #If no bias has been given
-                for point in polyLayer:
-                    point.append(z_value[-1])
+            for point in polyLayer:
+                point.append(z_value[-1])
             print("Before layerDevelop Object")                                 #For debugging
             '''
             The Below section runs through every feature in the layer, creates its object, and extrudes it to the layer thickness + previous deposition thickness
@@ -283,6 +240,8 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
                 pts2.append(FreeCAD.Vector(polyLayer[i][0],polyLayer[i][1],polyLayer[i][2]))            #FreeCAD.Vector(x,y,z)
             wire=Part.makePolygon(pts2)                                                                 #Connects all points given above, makes a wire polygon (just a line)
             face=Part.Face(wire)                                                                        #Creates a face from the wire above
+            if bias != 0:                                                       #If a bias has been given then create a new face
+                face = sp.biasFeatures(face, bias)                              #Calls function that biases the feature and returns a new face
             extrusionLIL1.append(face.extrude(Base.Vector(0,0,layer_thickness+depositionThickness[-1])))#Creates an extrusion from the new face, needs depositionThickness to get stamped
             #Part.show(extrusionLIL1[f])                                                                #Used to show the extrusion object - only used for debugging
             #hmedges = extrusionLIL1[f+numOfExt].Edges                                                  #Finds all the edges, used for debugging
@@ -292,7 +251,6 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
             for underPoly in lastDeposited:
                 cutFeat.Shape = cutFeat.Shape.cut(underPoly.Shape)
             #Below section trims the top with a "stamp"
-
 
             #print(stampObj.Base)                                                                       #For debugging
             #p1 = FreeCAD.Placement()
@@ -305,7 +263,58 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
             FreeCAD.ActiveDocument.removeObject("myCutObject")                  #Removes the cut object that is not "stamped" yet
 
             print("Before Chamfer")                                             #For debugging
-            taper(featureLIL1[-1], layer_thickness, angle, highestObj)          #Calls the taper function passing it the highest object before the new features were made
+            loop1Break = False; loop2Break = False#; loop3Break = False
+            curvedCall = False
+            bottomFaces = []
+            for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
+                for idx, vert in enumerate(face.Vertexes):
+                    if idx == (len(face.Vertexes)-1) and round(vert.distToShape(highestObj.Shape)[0],2)==0:  #If the face intersects with the deposition layer then it is at the bottom
+                        faceSurface = face.Surface
+                        pt=Base.Vector(0,1,0)
+                        param = faceSurface.parameter(pt)
+                        #print(param)
+                        norm = face.normalAt(param[0],param[1])
+                        #print(norm)
+                        if abs(norm[2]) != 0:                                       #If the face is oriented to one of the sides then ignore it
+                            bottomFaces.append(face)                        #Append this face to our list, using list versus fusing them because we want all seperate faces
+                            #Part.show(face)                                        #Used for debugging, currently shows the correct bottom faces
+                    elif round(vert.distToShape(highestObj.Shape)[0],2)==0 and (round(vert.Point[2],2) >= z_value[-1]):     #If the entire array has not been inspected then inspect next edge
+                        continue
+                    else:
+                        #print("breaking with z value of {:.2f} and height of {:.2f}".format(z_value[-1], vert.Point[2]))   #For debugging
+                        break
+            for face in bottomFaces:
+                for edge1 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                    edge1Dir = np.array(edge1.tangentAt(edge1.FirstParameter))      #Finds the vector direction of the edge and converts to a numpy array
+                    #Part.show(edge1)
+                    for edge2 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                        edge2Dir = np.array(edge2.tangentAt(edge2.FirstParameter))  #Finds the vector direction of the edge and converts to a numpy array
+                        #Part.show(edge2)
+                        #If any of the edges are not at right angles to each other then consider it unable to be chamfered
+                        if edge1.firstVertex().Point[2] == edge1.lastVertex().Point[2] == edge2.firstVertex().Point[2] == edge2.lastVertex().Point[2]:
+                            cornerAngle = math.degrees(math.acos(np.clip(np.dot(edge1Dir, edge2Dir)/ (np.linalg.norm(edge1Dir)* np.linalg.norm(edge2Dir)), -1, 1)))/90
+                            #print(angle)
+                            if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
+                                print("Non-rectangular object found, skipping taper")
+                                chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
+                                chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                                #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
+                                loop1Break = True; loop2Break = True#; loop3Break = True
+                                curvedCall = True
+                                break
+                        #else:
+                        #    print("Continuing")
+                    if loop2Break == True:
+                        break
+                if loop1Break == True:
+                    break
+            if curvedCall == False:
+                taper(featureLIL1[-1], layer_thickness, angle, highestObj)          #Calls the taper function passing it the highest object before the new features were made
+            else:
+                print("Object was Non-rectangular and did not get chamfered")
+                #taper(featureLIL1[-1], layer_thickness, angle, highestObj)
+                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
             print("After Chamfer")                                              #For debugging
 
         FreeCAD.ActiveDocument.removeObject("myStampingObject")             #Removes the stamping surface (previous deposition layer)
@@ -877,12 +886,13 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
 
     Returns nothing, all edits done in place
     '''
-
+    print("taperOverHoles begin")
     numOfExt2 = len(extrusionLIL1)-1                                            #Total number of extrusions, for offsetting, number 2 to ensure they aren't deleted in layerDevelop
     numOfFeat2 = len(featureLIL1)-1                                     #Total number of features, for offsetting, -1 because the feature was added before this length was retrieved
     numOfChamf2 = len(chamfLIL1)                                                #Total number of extrusions, for offsetting
     numOfFeatNames2 = len(featureNames)-1                               #Total number of feature names, for offsetting, -1 because the feature was added before this length was retrieved
     numOfChamfNames2 = len(chamfNames)                                          #Total number of chamfer names, for offsetting
+    #print(angle)
     if angle != 0:                                                              #If there is a chamfer angle given
         '''
         Need to create a section here that takes our object and splits it apart where each bottom face is an object. Then I need to extrude those faces
@@ -895,10 +905,16 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
         '''
         bottomFaces = []
         dep_obj2 = FreeCAD.ActiveDocument.getObject(lastDeposited[-1].Label).Shape.copy()      #Copies the deposit layer to check for face comparison
+        #Part.show(dep_obj2)
+        #Part.show(topObj.Shape)
+        #print("Debugger")
         '''Below section also grabs the side faces to remove them'''
         for face in polygon.Shape.Faces:                                        #Searches all the faces in the passed polygon looking for just bottom faces
+            #print("Debugger 2")
             for idx, vert in enumerate(face.Vertexes):
+                #print("Debugger 3")
                 if idx == (len(face.Vertexes)-1) and round(vert.distToShape(topObj.Shape)[0],2)==0:  #If the face intersects with the deposition layer then it is at the bottom
+                    #print("Debugger 4")
                     faceSurface = face.Surface
                     pt=Base.Vector(0,1,0)
                     param = faceSurface.parameter(pt)
@@ -906,75 +922,61 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                     norm = face.normalAt(param[0],param[1])
                     #print(norm)
                     if abs(norm[2]) != 0:                                       #If the face is oriented to one of the sides then ignore it
-                        bottomFaces.append(face) #Append this face to our list, using list versus fusing them because we want all seperate faces
+                        bottomFaces.append(face)                                #Append face to list, using list versus fusing them as need to be all seperate faces
                         #Part.show(face)                                        #Used for debugging, currently shows the correct bottom faces
                 elif round(vert.distToShape(topObj.Shape)[0],2)==0 and (round(vert.Point[2],2) >= z_value[-1]):     #If the entire array has not been inspected then inspect next edge
                     continue
                 else:
                     #print("breaking with z value of {:.2f} and height of {:.2f}".format(z_value[-1], vert.Point[2]))   #For debugging
                     break
+        #print(len(bottomFaces))                                                 #For debugging
         '''
         If there are no bottom faces then there is a floating object or object missing, so the code throws an error. Otherwise, if there is 1 bottom face
         then do basic calculations not worrying about angled objects (layered on not of other objects). If there are multiple bottom faces then it is likely layered
         on top of another object and requires more work to find the correct edges to chamfer.
 
         **There might not be a need for special case 2 bottom faces
-
-        The bottomFaces == 1 if statement is incomplete. It must be updated for it to work properly.
         '''
-        if len(bottomFaces) == 0: #Only 1 bottom face, so it is not going over any other features
-            bad = FreeCAD.ActiveDocument.addObject("Part::Feature", "BreakingStuff")
+        if len(bottomFaces) == 0:                                               #This means there is an invalid object being passed
+            bad = FreeCAD.ActiveDocument.addObject("Part::Feature", "BreakingStuff")    #Placeholder to show that there is an invalid object in taper
             bad.Shape = polygon
             print("What is this shape?")                                        #For debugging
         elif len(bottomFaces) == 1: #Only 1 bottom face, so it is not going over any other features
-            chamfNames.append("newChamf"+str(len(chamfNames)))                      #Creates new chamfer name for the fixed object
-            chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
-            chamfLIL1[-1].Shape = polygon.Shape
-            holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
-            pass
-            '''This section of the code is currently incomplete and needs to get updated'''
-            #Do the simple portion at the top part of Taper (may have to adjust slightly)
-            #Part.show(polygon)
-            tempObj = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness)) #Initial extrusion
-            #objToCut = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness+.0005))
-            originalObj = polygon.Shape.copy()
-            justHoles = originalObj.cut(tempObj)#objToCut)#tempObj)
-            if len(justHoles.Faces) == 0: #No holes on this feature
+            #Part.show(polygon)                                                 #For debugging
+            tempObj = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness))  #Initial extrusion
+            #Part.show(tempObj)                                                 #For debugging
+            print("Only 1 bottom face found")
+            originalObj = polygon.Shape.copy()                                  #Copy of the original polygon, used for cuts and comparisons
+            justHoles = originalObj.cut(tempObj)                                #Removes the hole section from the main object, so it is not inspected
+            holeSections = justHoles                                            #Copy of the hole section, used for object naming after chamfer is complete
+            if len(justHoles.Faces) == 0:                                       #No holes on this feature - should work as regular chamfer
                 print("No holes present inside taper function")
-                #Do the simple portion at the top part of Taper (may have to adjust slightly)
-                #Part.show(polygon)
-                tempObj = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness)) #Initial extrusion
-                #chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name
-                #chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD
-                #chamfLIL1[-1].Base = tempObj       #Adds the new feature as the base to chamfer
-                polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames))) #Must create this to set chamfer base equal to
+                polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames)))   #Must create this to set chamfer base equal to
                 polyFeature.Shape = tempObj
-                chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name, 0 is f is layerDevelop
-                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD, 0 should be number of features up to here, used as f above
-                #layerObjects.append(chamfNames[f+numOfChamfNames])                                              #Holds chamfer names to add to the final layer object
-                chamfLIL1[-1].Base = polyFeature#FreeCAD.ActiveDocument.getObject(featureNames[numOfFeatNames2])#featureNames[f+numOfFeatNames])       #Adds the new feature as the base to chamfer
+                chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name
+                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))                 #Creates new chamfer inside FreeCAD
+                chamfLIL1[-1].Base = polyFeature                                #Adds the new feature as the base to chamfer
                 '''
                 For loop below runs through every face inside the new features and checks its Z values
                 If the Z values are equal to the highest Z point then it increments a counter
                 If that counter is equal to the number of vertices in that face then it means that every vertex was at the peak point
                 So this means the face is the top face. Only works for the first layer. Other layers require more work (other part of if statement)
                 '''
-                for face in polyFeature.Shape.Faces:               #Runs through all faces in the newest feature
+                for face in polyFeature.Shape.Faces:                            #Runs through all faces in the newest feature
                     count = 0
                     for vertex in face.Vertexes:                                #Extracts each vertex in the face
-                        if vertex.Z >= z_value[-1]+layer_thickness:             #If the vertex's Z point is equal to the current top location
+                        if vertex.Z >= z_value[-1]+layer_thickness-.0005:       #If the vertex's Z point is equal to the current top location (or close to it)
                             count +=1
-                    if count == len(face.Vertexes): #If all Vertices have the max z value then this is right face
+                    if count == len(face.Vertexes):                             #If all Vertices have the max z value then this is right face
                         foi = face
-                #print(foi.Edges[0])                                             #For debugging
-                edgeNums = []; indexing = 0
+                #print(foi.Edges[0])                                            #For debugging
                 '''
                 Below loop runs through all of the edges from the previously found top face and adds them to an array
                 This loop has to compare the edges of the top face (foi) to the edges of each face in the original object
                 This is required to find the index of the face from the original object as it is stored in FreeCAD
                 Without doing this the desired edges cannot be selected to use as chamfer edges as it will not edit the original object
-                Needs to be updated to cut out the .0001 that cannot be chamfered (see forum_question_2.py for an example)
                 '''
+                edgeNums = []; indexing = 0
                 for edgeMain in polyFeature.Shape.Edges:           #Runs through all edges in the original shape (the new feature)
                     indexing += 1; count = 0
                     for edgeFace in foi.Edges:                                  #Runs through each edge in the desired face (top face)
@@ -991,301 +993,121 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                 #FreeCADGui.ActiveDocument.getObject(featureNames[-1]).Visibility = False #Does this need FreeCADGui or FreeCAD as leader?
                 '''
                 Below section takes the chamfered objects and shifts it down .0001, then cuts off that .0001 that isn't chamfered at bottom and creates a new
-                feature for it. Experimenting with this to see if it will alleviate the need for the complicated searches above, and clear up the incorrect directions
-                of edges that occur when there is a disconnect from the .0001 distance. So it should fix the disconnect of edges and clean up the code.
+                feature for it. This alleviates the need to do more complicated searches to take the extra .0001 into account, and clears up errors with top edges
+                switching directions because of the additional edges at bottom (caused a flip on which way was the Z direction for chamfer.Edges). Deletes the disconnect
+                at the .0001 that would otherwise occur in future depositions as well. Ultimately it also cleans up the code, but adds a .1um error to all feature heights.
 
-                *Needs to be fixed so that it updates with the correct chamf1 (needs to be the last added chamfer), and the correct chamfNew (needs to add to chamfNames).
-                Likely will need to delete the last chamfer (myChamferX) from the array and add this newChamfer feature, so that the whole array is eventually just newChamfer.
-                This also means that everything in the code will need to look for newChamferX and not myChamferX. Will also need to delete the myChamferX features. Might have
-                to update the bulk function as well*
-                *Below breaks on the chamfers that do not run because when trying to get the base of those chamfers (that didn't run) it finds that it is null. To fix this we
-                first need to fix the chamfering issue (I know this was part of the resolution). Guess it needs to all be implemented at once
+                **This can potentially change in the future by extruding the object more than its designated thickness and then just cut off the bottom of the
+                feature similar to what is being done here, but it would be trimming excess instead of part of the feature itself.
                 '''
 
                 FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
-                placement1 = FreeCAD.Placement() #Placement vectors are used to move objects inside FreeCAD
-                placement1.move(FreeCAD.Vector(0,0,-.0001))		#This defines the movement based off created vector
-                chamfLIL1[-1].Placement = placement1  #This moves desired object the specificied amount
+                placement1 = FreeCAD.Placement()                                #Placement vectors are used to move objects inside FreeCAD
+                placement1.move(FreeCAD.Vector(0,0,-.0001))		                #This defines the movement based off created vector
+                chamfLIL1[-1].Placement = placement1                            #This moves desired object the specificied amount
                 newChamf = FreeCAD.ActiveDocument.addObject("Part::Feature", "tempChamf")
-                newChamf.Shape = chamfLIL1[-1].Shape.cut(FreeCAD.ActiveDocument.getObject(depositNames[-1]).Shape)#dep_obj2) #Cuts the .0001 unchamfered portion on the deposition layer
+                newChamf.Shape = chamfLIL1[-1].Shape.cut(topObj.Shape)          #Cuts the .0001 unchamfered portion on the deposition layer
                 #Need to delete the old chamfer here and add the new one
-                FreeCAD.ActiveDocument.removeObject(chamfNames[-1]) #Should delete the myChamferX object
-                chamfNames.pop() #Should remove the myChamferX name
-                chamfLIL1.pop()  #Should remove the chamfer object from array
-                chamfNames.append("newChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name for the fixed object
+                FreeCAD.ActiveDocument.removeObject(chamfNames[-1])             #Deletes the myChamferX object
+                chamfNames.pop()                                                #Deletes the myChamferX name
+                chamfLIL1.pop()                                                 #Removes the chamfer object from array
+                chamfNames.append("newChamf"+str(len(chamfNames)))              #Creates new chamfer name for the fixed object
                 chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
                 chamfLIL1[-1].Shape = newChamf.Shape
-                FreeCAD.ActiveDocument.removeObject("tempChamf") #Should delete the myChamferX object
+                FreeCAD.ActiveDocument.removeObject("tempChamf")                #Deletes the tempChamf object
+                print("After obj chamfer")
             else:
-                #Part.show(justHoles)
-                #chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name
-                #chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD
-                #chamfLIL1[-1].Base = tempObj       #Adds the new feature as the base to chamfer
+                print("Holes found within layer")
                 polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames))) #Must create this to set chamfer base equal to
-                polyFeature.Shape = originalObj#tempObj
-                chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name, 0 is f is layerDevelop
-                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD, 0 should be number of features up to here, used as f above
-                #layerObjects.append(chamfNames[f+numOfChamfNames])                                              #Holds chamfer names to add to the final layer object
-                chamfLIL1[-1].Base = polyFeature#FreeCAD.ActiveDocument.getObject(featureNames[numOfFeatNames2])#featureNames[f+numOfFeatNames])       #Adds the new feature as the base to chamfer
+                polyFeature.Shape = tempObj                                                                       #Sets shape equal to the extruded face
+                chamfNames.append("myChamf"+str(len(chamfNames)))                                                 #Creates new chamfer name
+                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))               #Creates new chamfer inside FreeCAD
+                chamfLIL1[-1].Base = polyFeature                                #Adds the new feature as the base to chamfer
                 '''
                 For loop below runs through every face inside the new features and checks its Z values
                 If the Z values are equal to the highest Z point then it increments a counter
                 If that counter is equal to the number of vertices in that face then it means that every vertex was at the peak point
                 So this means the face is the top face. Only works for the first layer. Other layers require more work (other part of if statement)
                 '''
-                for face in tempObj.Faces:#polyFeature.Shape.Faces:               #Runs through all faces in the newest feature
+                for face in tempObj.Faces:                                      #Runs through all faces in the newest feature
                     count = 0
                     for vertex in face.Vertexes:                                #Extracts each vertex in the face
-                        #print("Z value is {:.4f} and height is {:.4f}".format(vertex.Z,(z_value[-1]+layer_thickness)))
-                        if vertex.Z >= z_value[-1]+layer_thickness-.0005:             #If the vertex's Z point is equal to the current top location
+                        #print("Z value is {:.4f} and height is {:.4f}".format(vertex.Z,(z_value[-1]+layer_thickness))) #For debugging
+                        if vertex.Z >= z_value[-1]+layer_thickness-.0005:       #If the vertex's Z point is equal to the current top location, or very clsoe
                             #print("Current count is {:.2f} out of {:.2f}".format(count,len(face.Vertexes)))
                             count +=1
-                    if count == len(face.Vertexes): #If all Vertices have the max z value then this is right face
+                    if count == len(face.Vertexes):                             #If all Vertices have the max z value then this is right face
                         foi = face
-                        #Part.show(foi)
-                #print(foi.Edges[0])                                             #For debugging
+                        #Part.show(foi)                                         #For debugging
+                #print(foi.Edges)                                               #For debugging
                 #justHoles = justHoles.cut(foi)
                 #Part.show(justHoles)
-                edgeNums = []; indexing = 0
-                '''
-                Below loop runs through all of the edges from the previously found top face and adds them to an array
-                This loop has to compare the edges of the top face (foi) to the edges of each face in the original object
-                This is required to find the index of the face from the original object as it is stored in FreeCAD
-                Without doing this the desired edges cannot be selected to use as chamfer edges as it will not edit the original object
-                Needs to be updated to cut out the .0001 that cannot be chamfered (see forum_question_2.py for an example)
-                '''
-                '''for edgeMain in polyFeature.Shape.Edges:           #Runs through all edges in the original shape (the new feature)
-                    indexing += 1; count = 0
-                    for edgeFace in foi.Edges:                                  #Runs through each edge in the desired face (top face)
-                        if edgeMain.firstVertex().Point == edgeFace.firstVertex().Point and edgeMain.lastVertex().Point == edgeFace.lastVertex().Point:
-                            edgeNums.append(indexing)                           #If the start and end vertex of the edges are same then add the index to array
-                #print(edgeNums)                                                #For debugging
-                myEdges = []                                                    #Edge array for chamfer function
-                for i in range(0, len(edgeNums)):                               #Runs through all the edges on top face as found from above for loop
-                    #For below line(edge number, extrusion in -Z direction (must be slightly less than max), extrusion into top face *Needs to be the angle*)
-                    #Should be edges 4,7,10,12 for basic features (these are always top edges for a rectangular prism)
-                    myEdges.append((edgeNums[i],layer_thickness-.0001, layer_thickness*math.tan(angle) )) #Last part was updated to get cut at the desired angle
-                chamfLIL1[-1].Edges = myEdges                                    #Creates list of all chamfer edges
-                #FreeCADGui.ActiveDocument.getObject(featureNames[-1]).Visibility = False #Does this need FreeCADGui or FreeCAD as leader?'''
-                '''
-                Below section takes the chamfered objects and shifts it down .0001, then cuts off that .0001 that isn't chamfered at bottom and creates a new
-                feature for it. Experimenting with this to see if it will alleviate the need for the complicated searches above, and clear up the incorrect directions
-                of edges that occur when there is a disconnect from the .0001 distance. So it should fix the disconnect of edges and clean up the code.
 
-                *Needs to be fixed so that it updates with the correct chamf1 (needs to be the last added chamfer), and the correct chamfNew (needs to add to chamfNames).
-                Likely will need to delete the last chamfer (myChamferX) from the array and add this newChamfer feature, so that the whole array is eventually just newChamfer.
-                This also means that everything in the code will need to look for newChamferX and not myChamferX. Will also need to delete the myChamferX features. Might have
-                to update the bulk function as well*
-                *Below breaks on the chamfers that do not run because when trying to get the base of those chamfers (that didn't run) it finds that it is null. To fix this we
-                first need to fix the chamfering issue (I know this was part of the resolution). Guess it needs to all be implemented at once
                 '''
-
-                '''FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
-                placement1 = FreeCAD.Placement() #Placement vectors are used to move objects inside FreeCAD
-                placement1.move(FreeCAD.Vector(0,0,-.0001))		#This defines the movement based off created vector
-                chamfLIL1[-1].Placement = placement1  #This moves desired object the specificied amount
-                newChamf = FreeCAD.ActiveDocument.addObject("Part::Feature", "tempChamf")
-                newChamf.Shape = chamfLIL1[-1].Shape.cut(FreeCAD.ActiveDocument.getObject(depositNames[-1]).Shape)#dep_obj2) #Cuts the .0001 unchamfered portion on the deposition layer
-                #Need to delete the old chamfer here and add the new one
-                FreeCAD.ActiveDocument.removeObject(chamfNames[-1]) #Should delete the myChamferX object
-                chamfNames.pop() #Should remove the myChamferX name
-                chamfLIL1.pop()  #Should remove the chamfer object from array
-                chamfNames.append("newChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name for the fixed object
-                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
-                chamfLIL1[-1].Shape = newChamf.Shape
-                FreeCAD.ActiveDocument.removeObject("tempChamf") #Should delete the myChamferX object
-                #Do the simple portion at the top part of Taper (may have to adjust slightly)
-                #Part.show(polygon)
-                tempObj = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness)) #Initial extrusion
-                #chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name
-                #chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD
-                #chamfLIL1[-1].Base = tempObj       #Adds the new feature as the base to chamfer
-                polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames))) #Must create this to set chamfer base equal to
-                polyFeature.Shape = tempObj
-                chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name, 0 is f is layerDevelop
-                chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD, 0 should be number of features up to here, used as f above
-                #layerObjects.append(chamfNames[f+numOfChamfNames])                                              #Holds chamfer names to add to the final layer object
-                chamfLIL1[-1].Base = polyFeature#FreeCAD.ActiveDocument.getObject(featureNames[numOfFeatNames2])#featureNames[f+numOfFeatNames])       #Adds the new feature as the base to chamfer
-                ''''''
-                For loop below runs through every face inside the new features and checks its Z values
-                If the Z values are equal to the highest Z point then it increments a counter
-                If that counter is equal to the number of vertices in that face then it means that every vertex was at the peak point
-                So this means the face is the top face. Only works for the first layer. Other layers require more work (other part of if statement)
+                Below section first runs through all the edges from the previously found top face and takes out only the outside edges, ignoring all the
+                edges that would be part of the hole section (still on top but not an outside edge). Using this new list it compares all the outside edges
+                to the edges of the original object to get the edge nubmers (index numbers) of the original object: without this comparison the original object
+                cannot be chamfered. These edges are then added into the list of edges to chamfer.
                 '''
-                '''for face in polyFeature.Shape.Faces:               #Runs through all faces in the newest feature
-                    count = 0
-                    for vertex in face.Vertexes:                                #Extracts each vertex in the face
-                        if vertex.Z >= z_value[-1]+layer_thickness:             #If the vertex's Z point is equal to the current top location
-                            count +=1
-                    if count == len(face.Vertexes): #If all Vertices have the max z value then this is right face
-                        foi = face
-                #print(foi.Edges[0])                                             #For debugging
-                edgeNums = []; indexing = 0'''
-                '''
-                Below loop runs through all of the edges from the previously found top face and adds them to an array
-                This loop has to compare the edges of the top face (foi) to the edges of each face in the original object
-                This is required to find the index of the face from the original object as it is stored in FreeCAD
-                Without doing this the desired edges cannot be selected to use as chamfer edges as it will not edit the original object
-                Needs to be updated to cut out the .0001 that cannot be chamfered (see forum_question_2.py for an example)
-                '''
-                '''boundary = []       #Finds a boundary list for all the outside edges, this might be the only thing we need now?
-                #for face in new_obj.Faces:
-                for edge in foi.OuterWire.Edges:#face.OuterWire.Edges:
-                    ancestors = foi.ancestorsOfType(edge, Part.Face)#new_obj.ancestorsOfType(edge, Part.Face)
-                    if len(ancestors) == 1:
-                        boundary.append(edge)
-                noHoleEdges = []
-                for edgeMain in foi.Edges:
-                    for edgeFace in boundary:
-                        if edgeMain.firstVertex().Point != edgeFace.firstVertex().Point and edgeMain.lastVertex().Point != edgeFace.lastVertex().Point:
-                            noHoleEdges.append(edgeMain)'''
-                outerEdges = []
+                outerEdges = []                                                 #Grabs outside edges, ignores the edges near the hole
                 for edge1 in foi.Edges:
-                    for idx, edge2 in enumerate(justHoles.Edges):
+                    for idx, edge2 in enumerate(justHoles.Edges):               #Runs through edges from the hole object
                         if round(edge1.firstVertex().Point[2],2) == round(edge2.firstVertex().Point[2],2): #If at same height (only top hole edges)
-                            #if edge1.firstVertex().Point != edge2.firstVertex().Point or edge1.lastVertex().Point != edge2.lastVertex().Point:
-                            #print("SAME HEIGHT")
-                            #if edge1.firstVertex().Point[0] != edge2.firstVertex().Point[0] or edge1.firstVertex().Point[1] != edge2.firstVertex().Point[1] or \
-                            #edge1.lastVertex().Point[0] != edge2.lastVertex().Point[0] or edge1.lastVertex().Point[1] != edge2.lastVertex().Point[1]: #If any of the points are not equal
                             if (edge1.firstVertex().Point[0] == edge2.firstVertex().Point[0] and edge1.firstVertex().Point[1] == edge2.firstVertex().Point[1]) or \
                             (edge1.lastVertex().Point[0] == edge2.lastVertex().Point[0] and edge1.lastVertex().Point[1] == edge2.lastVertex().Point[1]): #If any of the points are not equal
                                 #continue
                                 #print("Vertices were equal")
                                 break
                             #print(idx, len(justHoles.Edges))
-                            if idx == len(justHoles.Edges)-1:
-                                outerEdges.append(edge1)
+                            if idx == len(justHoles.Edges)-1:                   #If edges at same height and all edge comparisons have failed (no matching ones)
+                                outerEdges.append(edge1)                        #Then this must be an outside edge
                             #else:
                                 #outerEdges.append(edge1)
                                 #Part.show(edge2)
-                        elif idx == len(justHoles.Edges)-1:
-                            outerEdges.append(edge1)
-                #print(outerEdges)
-                for edgeMain in polyFeature.Shape.Edges:           #Runs through all edges in the original shape (the new feature)
+                        elif idx == len(justHoles.Edges)-1:                     #If all other comparisons have been made and failed
+                            outerEdges.append(edge1)                            #Then this must be an outside edge
+                #print(outerEdges)                                              #For debugging
+
+                edgeNums = []; indexing = 0                                     #Used to keep track of the edge numbers needed to chamfer
+                for edgeMain in polyFeature.Shape.Edges:                        #Runs through all edges in the original shape (the new feature)
                     indexing += 1; count = 0
-                    for edgeFace in outerEdges:#foi.Edges:#noHoleEdges:#boundary:#foi.Edges:                                  #Runs through each edge in the desired face (top face)
-                        #print(edgeMain.firstVertex().Point, edgeFace.firstVertex().Point)
+                    for edgeFace in outerEdges:                                 #Runs through each edge in the outside edges
+                        #print(edgeMain.firstVertex().Point, edgeFace.firstVertex().Point)  #For debugging
                         if edgeMain.firstVertex().Point == edgeFace.firstVertex().Point and edgeMain.lastVertex().Point == edgeFace.lastVertex().Point:
                             edgeNums.append(indexing)                           #If the start and end vertex of the edges are same then add the index to array
                             break
-                print(edgeNums)                                                #For debugging
-                #edgeNums = list(set(edgeNums))
-                edgeNums = [46,49]#33,34,35]
+                #print(edgeNums)                                                #For debugging
+                #edgeNums = [46,49]#33,34,35]                                   #For debugging
                 myEdges = []                                                    #Edge array for chamfer function
                 for i in range(0, len(edgeNums)):                               #Runs through all the edges on top face as found from above for loop
                     #For below line(edge number, extrusion in -Z direction (must be slightly less than max), extrusion into top face *Needs to be the angle*)
                     #Should be edges 4,7,10,12 for basic features (these are always top edges for a rectangular prism)
-                    myEdges.append((edgeNums[i],.1,.1))#layer_thickness*math.tan(angle)))#layer_thickness-.0001, layer_thickness*math.tan(angle) )) #Last part was updated to get cut at the desired angle
-                chamfLIL1[-1].Edges = myEdges                                    #Creates list of all chamfer edges
-                #FreeCADGui.ActiveDocument.getObject(featureNames[-1]).Visibility = False #Does this need FreeCADGui or FreeCAD as leader?
+                    myEdges.append((edgeNums[i], layer_thickness-.0001, layer_thickness*math.tan(angle) ))
+                chamfLIL1[-1].Edges = myEdges                                   #Creates list of all chamfer edges
                 '''
                 Below section takes the chamfered objects and shifts it down .0001, then cuts off that .0001 that isn't chamfered at bottom and creates a new
-                feature for it. Experimenting with this to see if it will alleviate the need for the complicated searches above, and clear up the incorrect directions
-                of edges that occur when there is a disconnect from the .0001 distance. So it should fix the disconnect of edges and clean up the code.
+                feature for it. This alleviates the need to do more complicated searches to take the extra .0001 into account, and clears up errors with top edges
+                switching directions because of the additional edges at bottom (caused a flip on which way was the Z direction for chamfer.Edges). Deletes the disconnect
+                at the .0001 that would otherwise occur in future depositions as well. Ultimately it also cleans up the code, but adds a .1um error to all feature heights.
 
-                *Needs to be fixed so that it updates with the correct chamf1 (needs to be the last added chamfer), and the correct chamfNew (needs to add to chamfNames).
-                Likely will need to delete the last chamfer (myChamferX) from the array and add this newChamfer feature, so that the whole array is eventually just newChamfer.
-                This also means that everything in the code will need to look for newChamferX and not myChamferX. Will also need to delete the myChamferX features. Might have
-                to update the bulk function as well*
-                *Below breaks on the chamfers that do not run because when trying to get the base of those chamfers (that didn't run) it finds that it is null. To fix this we
-                first need to fix the chamfering issue (I know this was part of the resolution). Guess it needs to all be implemented at once
+                **This can potentially change in the future by extruding the object more than its designated thickness and then just cut off the bottom of the
+                feature similar to what is being done here, but it would be trimming excess instead of part of the feature itself.
                 '''
-
-                '''FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
-                placement1 = FreeCAD.Placement() #Placement vectors are used to move objects inside FreeCAD
-                placement1.move(FreeCAD.Vector(0,0,-.0001))		#This defines the movement based off created vector
-                chamfLIL1[-1].Placement = placement1  #This moves desired object the specificied amount
+                FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
+                placement1 = FreeCAD.Placement()                                #Placement vectors are used to move objects inside FreeCAD
+                placement1.move(FreeCAD.Vector(0,0,-.0001))		                #This defines the movement based off created vector
+                chamfLIL1[-1].Placement = placement1                            #This moves desired object the specificied amount
                 newChamf = FreeCAD.ActiveDocument.addObject("Part::Feature", "tempChamf")
-                newChamf.Shape = chamfLIL1[-1].Shape.cut(FreeCAD.ActiveDocument.getObject(depositNames[-1]).Shape)#dep_obj2) #Cuts the .0001 unchamfered portion on the deposition layer
+                newChamf.Shape = chamfLIL1[-1].Shape.cut(topObj.Shape)          #Cuts the .0001 unchamfered portion on the deposition layer
                 #Need to delete the old chamfer here and add the new one
-                FreeCAD.ActiveDocument.removeObject(chamfNames[-1]) #Should delete the myChamferX object
-                chamfNames.pop() #Should remove the myChamferX name
-                chamfLIL1.pop()  #Should remove the chamfer object from array
-                chamfNames.append("newChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name for the fixed object
+                FreeCAD.ActiveDocument.removeObject(chamfNames[-1])             #Deletes the myChamferX object
+                chamfNames.pop()                                                #Deletes the myChamferX name
+                chamfLIL1.pop()                                                 #Removes the chamfer object from array
+                chamfNames.append("newChamf"+str(len(chamfNames)))              #Creates new chamfer name for the fixed object
                 chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
                 chamfLIL1[-1].Shape = newChamf.Shape
-                FreeCAD.ActiveDocument.removeObject("tempChamf") #Should delete the myChamferX object'''
-                #print("Do simple stuff") #placeholder
-        elif len(bottomFaces) == 2: #This section of code might not be needed and so it is currently incomplete
-            print("Found 2 faces")
-            #Do the simple portion at the top part of Taper (may have to adjust slightly)
-            #Part.show(polygon)
-            if bottomFaces[0].Vertex[0].Point[2] > bottomFaces[1].Vertex[0].Point[2]:
-                tempObj = bottomFaces[0].extrude(Base.Vector(0,0,layer_thickness)) #Initial extrusion
-            elif bottomFaces[0].Vertex[0].Point[2] < bottomFaces[1].Vertex[0].Point[2]:
-                tempObj = bottomFaces[1].extrude(Base.Vector(0,0,layer_thickness)) #Initial extrusion
-            #chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name
-            #chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD
-            #chamfLIL1[-1].Base = tempObj       #Adds the new feature as the base to chamfer
-            polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames))) #Must create this to set chamfer base equal to
-            polyFeature.Shape = tempObj
-            chamfNames.append("myChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name, 0 is f is layerDevelop
-            chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Chamfer", chamfNames[-1]))    #Creates new chamfer inside FreeCAD, 0 should be number of features up to here, used as f above
-            #layerObjects.append(chamfNames[f+numOfChamfNames])                                              #Holds chamfer names to add to the final layer object
-            chamfLIL1[-1].Base = polyFeature#FreeCAD.ActiveDocument.getObject(featureNames[numOfFeatNames2])#featureNames[f+numOfFeatNames])       #Adds the new feature as the base to chamfer
-            '''
-            For loop below runs through every face inside the new features and checks its Z values
-            If the Z values are equal to the highest Z point then it increments a counter
-            If that counter is equal to the number of vertices in that face then it means that every vertex was at the peak point
-            So this means the face is the top face. Only works for the first layer. Other layers require more work (other part of if statement)
-            '''
-            for face in polyFeature.Shape.Faces:               #Runs through all faces in the newest feature
-                count = 0
-                for vertex in face.Vertexes:                                #Extracts each vertex in the face
-                    if vertex.Z >= z_value[-1]+layer_thickness:             #If the vertex's Z point is equal to the current top location
-                        count +=1
-                if count == len(face.Vertexes): #If all Vertices have the max z value then this is right face
-                    foi = face
-            #print(foi.Edges[0])                                             #For debugging
-            edgeNums = []; indexing = 0
-            '''
-            Below loop runs through all of the edges from the previously found top face and adds them to an array
-            This loop has to compare the edges of the top face (foi) to the edges of each face in the original object
-            This is required to find the index of the face from the original object as it is stored in FreeCAD
-            Without doing this the desired edges cannot be selected to use as chamfer edges as it will not edit the original object
-            Needs to be updated to cut out the .0001 that cannot be chamfered (see forum_question_2.py for an example)
-            '''
-            for edgeMain in polyFeature.Shape.Edges:           #Runs through all edges in the original shape (the new feature)
-                indexing += 1; count = 0
-                for edgeFace in foi.Edges:                                  #Runs through each edge in the desired face (top face)
-                    if edgeMain.firstVertex().Point == edgeFace.firstVertex().Point and edgeMain.lastVertex().Point == edgeFace.lastVertex().Point:
-                        edgeNums.append(indexing)                           #If the start and end vertex of the edges are same then add the index to array
-            #print(edgeNums)                                                #For debugging
-            myEdges = []                                                    #Edge array for chamfer function
-            for i in range(0, len(edgeNums)):                               #Runs through all the edges on top face as found from above for loop
-                #For below line(edge number, extrusion in -Z direction (must be slightly less than max), extrusion into top face *Needs to be the angle*)
-                #Should be edges 4,7,10,12 for basic features (these are always top edges for a rectangular prism)
-                myEdges.append((edgeNums[i],layer_thickness-.0001, layer_thickness*math.tan(angle) )) #Last part was updated to get cut at the desired angle
-            chamfLIL1[-1].Edges = myEdges                                    #Creates list of all chamfer edges
-            #FreeCADGui.ActiveDocument.getObject(featureNames[-1]).Visibility = False #Does this need FreeCADGui or FreeCAD as leader?
-            '''
-            Below section takes the chamfered objects and shifts it down .0001, then cuts off that .0001 that isn't chamfered at bottom and creates a new
-            feature for it. Experimenting with this to see if it will alleviate the need for the complicated searches above, and clear up the incorrect directions
-            of edges that occur when there is a disconnect from the .0001 distance. So it should fix the disconnect of edges and clean up the code.
-
-            *Needs to be fixed so that it updates with the correct chamf1 (needs to be the last added chamfer), and the correct chamfNew (needs to add to chamfNames).
-            Likely will need to delete the last chamfer (myChamferX) from the array and add this newChamfer feature, so that the whole array is eventually just newChamfer.
-            This also means that everything in the code will need to look for newChamferX and not myChamferX. Will also need to delete the myChamferX features. Might have
-            to update the bulk function as well*
-            *Below breaks on the chamfers that do not run because when trying to get the base of those chamfers (that didn't run) it finds that it is null. To fix this we
-            first need to fix the chamfering issue (I know this was part of the resolution). Guess it needs to all be implemented at once
-            '''
-
-            FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
-            placement1 = FreeCAD.Placement() #Placement vectors are used to move objects inside FreeCAD
-            placement1.move(FreeCAD.Vector(0,0,-.0001))		#This defines the movement based off created vector
-            chamfLIL1[-1].Placement = placement1  #This moves desired object the specificied amount
-            newChamf = FreeCAD.ActiveDocument.addObject("Part::Feature", "tempChamf")
-            newChamf.Shape = chamfLIL1[-1].Shape.cut(FreeCAD.ActiveDocument.getObject(depositNames[-1]).Shape)#dep_obj2) #Cuts the .0001 unchamfered portion on the deposition layer
-            #Need to delete the old chamfer here and add the new one
-            FreeCAD.ActiveDocument.removeObject(chamfNames[-1]) #Should delete the myChamferX object
-            chamfNames.pop() #Should remove the myChamferX name
-            chamfLIL1.pop()  #Should remove the chamfer object from array
-            chamfNames.append("newChamf"+str(len(chamfNames)))                                                   #Creates new chamfer name for the fixed object
-            chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
-            chamfLIL1[-1].Shape = newChamf.Shape
-            FreeCAD.ActiveDocument.removeObject("tempChamf") #Should delete the myChamferX object
-            #print("Do simple stuff") #placeholder
+                FreeCAD.ActiveDocument.removeObject("tempChamf")                #Deletes the tempChamf object
+                print("After obj chamfer")
         else:                                                                   #Objects layered on top of other objects
             '''
             Below section removes the faces that make up the hole (via) from the object (if there is one), it keeps track of it to fuse it back at the very
@@ -1881,58 +1703,8 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     upShifts = (highestPoint-lowPointLayer)/layer_thickness                     #Gives total number of necessary cuts (above Z) based off the thickness of the layer to deposit on
     for f in range(0,len(all_polygons_dict[layerNum])):                         #Goes through all polygons in given key (layerNum)
         polyLayer = sp.get_xy_points(all_polygons_dict[layerNum][f])            #Converts all to mm
-        '''Below section adds the bias to objects. It takes every vertex and compares it to the next one, one of those vertices gets an addition to x or y
-        and the other vertex gets a subtraction to x or y. This bias currently works as a subtraction (makes the feature smaller) to imitate etching.'''
-        if bias != 0:
-            xChange = False; yChange = False                                    #Used so that one vertex does not receive multiple changes on same axis
-            verts = len(polyLayer)
-            xChanges = [bias]*verts; yChanges = [bias]*verts                    #Store changes so they are only changed at the end
-            for idx, point in enumerate(polyLayer):
-                if idx == verts-1:                                              #If looking at last vertex of the shape, the next vertex is the first vertex
-                    next = 0
-                else:                                                           #Updates the next vertex
-                    next = idx+1
-                if point[0] == polyLayer[next][0]:                              #Share same x point, update y values (change along x-axis)
-                    if yChange == False:
-                        if point[1] > polyLayer[next][1]:                       #Compares actual value, abs value would cause inverse errors if crossing axis
-                            yChanges[idx] = -bias
-                            yChanges[next] = bias
-                            yChange = True
-                        else:
-                            yChanges[idx] = bias
-                            yChanges[next] = -bias
-                            yChange = True
-                    else:
-                        yChange = False
-                else:
-                    yChange = False
-                if point[1] == polyLayer[next][1]:                              #Share same y point, update x values (change along y-axis)
-                    if xChange == False:
-                        if point[0] > polyLayer[next][0]:                       #Compares actual value, abs value would cause inverse errors if crossing axis
-                            xChanges[idx] = -bias
-                            xChanges[next] = bias
-                            xChange = True
-                        else:
-                            xChanges[idx] = bias
-                            xChanges[next] = -bias
-                            xChange = True
-                    else:
-                        xChange = False
-                else:
-                    xChange = False
-                    #print("Something in bias is not working.")                 #Used for debugging
-            #print(len(polyLayer),len(xChanges),len(yChanges))                  #Used for debugging
-            #print(xChanges)                                                    #Used for debugging
-            #print(yChanges)                                                    #Used for debugging
-            for id, point2 in enumerate(polyLayer):                             #Changes the points based off previously found necessary changes
-                point2[0] = point2[0] + xChanges[id]
-                point2[1] = point2[1] + yChanges[id]
-                point2.append(0)                                                #Attaches a Z value to every vertex (currently based off the height of last features)
-            polyLayer[0][0] = polyLayer[-1][0]
-            polyLayer[0][1] = polyLayer[-1][1]
-        else:                                                                   #If no bias has been given
-            for point in polyLayer:
-                point.append(0)
+        for point in polyLayer:
+            point.append(0)
         print("Before layerDevelop Object")                                     #For debugging
         '''Below section creates a face from the vertices and then extrudes it to create the feature, it then creates a new FreeCAD Part'''
         pts2=[]
@@ -1940,6 +1712,8 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
             pts2.append(FreeCAD.Vector(polyLayer[i][0],polyLayer[i][1],polyLayer[i][2])) #FreeCAD.Vector(x,y,z)
         wire=Part.makePolygon(pts2)                                             #Connects all points given above, makes a wire polygon (just a line)
         face=Part.Face(wire)                                                    #Creates a face from the wire above
+        if bias != 0:                                                           #If a bias has been given then create a new face
+            face = sp.biasFeatures(face, bias)                                  #Calls function that biases the feature and returns a new face
         overObjects.append(face.extrude(Base.Vector(0,0,highestPoint+layer_thickness)))
     '''
     The below section takes the copied deposition layer and shifts it down cutting out the features of the objects. It then takes the other copy and shifts
@@ -1956,6 +1730,9 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     for i in range(0,totalUpShifts):
         if i == 0:
             tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))#+.0005))
+            #for idx,obj in enumerate(overObjects):
+            #    overObjects[idx] = overObjects[idx].cut(tempDep2)
+            #tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness-.0005))
         else:
             tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))
         #if "myPlanar" != lastDeposited[-2].Label:
@@ -1975,7 +1752,62 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
         #if "myPlanar" == lastDeposited[-2].Label:
         #    taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
         #elif idx == 2:
-        taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
+        loop1Break = False; loop2Break = False#; loop3Break = False
+        curvedCall = False
+        bottomFaces = []
+        for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
+            for idx, vert in enumerate(face.Vertexes):
+                if idx == (len(face.Vertexes)-1) and round(vert.distToShape(highestObj.Shape)[0],2)==0:  #If the face intersects with the deposition layer then it is at the bottom
+                    faceSurface = face.Surface
+                    pt=Base.Vector(0,1,0)
+                    param = faceSurface.parameter(pt)
+                    #print(param)
+                    norm = face.normalAt(param[0],param[1])
+                    #print(norm)
+                    if abs(norm[2]) != 0:                                       #If the face is oriented to one of the sides then ignore it
+                        bottomFaces.append(face)                        #Append this face to our list, using list versus fusing them because we want all seperate faces
+                        #Part.show(face)                                        #Used for debugging, currently shows the correct bottom faces
+                elif round(vert.distToShape(highestObj.Shape)[0],2)==0 and (round(vert.Point[2],2) >= z_value[-1]):     #If the entire array has not been inspected then inspect next edge
+                    continue
+                else:
+                    #print("breaking with z value of {:.2f} and height of {:.2f}".format(z_value[-1], vert.Point[2]))   #For debugging
+                    break
+        for face in bottomFaces:
+            for edge1 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                edge1Dir = np.array(edge1.tangentAt(edge1.FirstParameter))      #Finds the vector direction of the edge and converts to a numpy array
+                #Part.show(edge1)
+                for edge2 in face.Edges:#featureLIL1[-1].Shape.Edges:
+                    edge2Dir = np.array(edge2.tangentAt(edge2.FirstParameter))  #Finds the vector direction of the edge and converts to a numpy array
+                    #Part.show(edge2)
+                    #If any of the edges are not at right angles to each other then consider it unable to be chamfered
+                    if edge1.firstVertex().Point[2] == edge1.lastVertex().Point[2] == edge2.firstVertex().Point[2] == edge2.lastVertex().Point[2]:
+                        cornerAngle = math.degrees(math.acos(np.clip(np.dot(edge1Dir, edge2Dir)/ (np.linalg.norm(edge1Dir)* np.linalg.norm(edge2Dir)), -1, 1)))/90
+                        #print(angle)
+                        if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
+                            print("Non-rectangular object found, skipping taper")
+                            chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                            chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
+                            chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                            #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
+                            loop1Break = True; loop2Break = True#; loop3Break = True
+                            curvedCall = True
+                            break
+                        #else:
+                        #    print("Continuing")
+                if loop2Break == True:
+                    break
+            if loop1Break == True:
+                break
+        if curvedCall == False:
+            taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
+        else:
+            print("Object was Non-rectangular and did not get chamfered")
+            #try:
+                #taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
+                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
+            #except:
+                #print("Failed regular taper")
+            #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
         print("After Chamfer")                                                  #For debugging
     '''
     The below section cleans up the extra deposition layer created to shape the new objects. The new objects are then fused into a single layer and returned.
