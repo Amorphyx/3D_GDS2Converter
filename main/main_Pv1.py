@@ -886,6 +886,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
 
     Returns nothing, all edits done in place
     '''
+    #Part.show(polygon.Shape)
     print("taperOverHoles begin")
     numOfExt2 = len(extrusionLIL1)-1                                            #Total number of extrusions, for offsetting, number 2 to ensure they aren't deleted in layerDevelop
     numOfFeat2 = len(featureLIL1)-1                                     #Total number of features, for offsetting, -1 because the feature was added before this length was retrieved
@@ -934,8 +935,6 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
         If there are no bottom faces then there is a floating object or object missing, so the code throws an error. Otherwise, if there is 1 bottom face
         then do basic calculations not worrying about angled objects (layered on not of other objects). If there are multiple bottom faces then it is likely layered
         on top of another object and requires more work to find the correct edges to chamfer.
-
-        **There might not be a need for special case 2 bottom faces
         '''
         if len(bottomFaces) == 0:                                               #This means there is an invalid object being passed
             bad = FreeCAD.ActiveDocument.addObject("Part::Feature", "BreakingStuff")    #Placeholder to show that there is an invalid object in taper
@@ -949,6 +948,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
             originalObj = polygon.Shape.copy()                                  #Copy of the original polygon, used for cuts and comparisons
             justHoles = originalObj.cut(tempObj)                                #Removes the hole section from the main object, so it is not inspected
             holeSections = justHoles                                            #Copy of the hole section, used for object naming after chamfer is complete
+            #Part.show(justHoles)
             if len(justHoles.Faces) == 0:                                       #No holes on this feature - should work as regular chamfer
                 print("No holes present inside taper function")
                 polyFeature = FreeCAD.ActiveDocument.addObject("Part::Feature", "SillyName"+str(len(chamfNames)))   #Must create this to set chamfer base equal to
@@ -1053,8 +1053,9 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                 for edge1 in foi.Edges:
                     for idx, edge2 in enumerate(justHoles.Edges):               #Runs through edges from the hole object
                         if round(edge1.firstVertex().Point[2],2) == round(edge2.firstVertex().Point[2],2): #If at same height (only top hole edges)
-                            if (edge1.firstVertex().Point[0] == edge2.firstVertex().Point[0] and edge1.firstVertex().Point[1] == edge2.firstVertex().Point[1]) or \
-                            (edge1.lastVertex().Point[0] == edge2.lastVertex().Point[0] and edge1.lastVertex().Point[1] == edge2.lastVertex().Point[1]): #If any of the points are not equal
+                            if (round(edge1.firstVertex().Point[0],5) == round(edge2.firstVertex().Point[0],5) and round(edge1.firstVertex().Point[1],5) \
+                             == round(edge2.firstVertex().Point[1],5)) or (round(edge1.lastVertex().Point[0],5) == round(edge2.lastVertex().Point[0],5) \
+                              and round(edge1.lastVertex().Point[1],5) == round(edge2.lastVertex().Point[1],5)): #If any of the points are not equal
                                 #continue
                                 #print("Vertices were equal")
                                 break
@@ -1076,13 +1077,14 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                         if edgeMain.firstVertex().Point == edgeFace.firstVertex().Point and edgeMain.lastVertex().Point == edgeFace.lastVertex().Point:
                             edgeNums.append(indexing)                           #If the start and end vertex of the edges are same then add the index to array
                             break
-                #print(edgeNums)                                                #For debugging
+                print(edgeNums)                                                 #For debugging
+                print("After edge indexing ")
                 #edgeNums = [46,49]#33,34,35]                                   #For debugging
                 myEdges = []                                                    #Edge array for chamfer function
                 for i in range(0, len(edgeNums)):                               #Runs through all the edges on top face as found from above for loop
                     #For below line(edge number, extrusion in -Z direction (must be slightly less than max), extrusion into top face *Needs to be the angle*)
                     #Should be edges 4,7,10,12 for basic features (these are always top edges for a rectangular prism)
-                    myEdges.append((edgeNums[i], layer_thickness-.0001, layer_thickness*math.tan(angle) ))
+                    myEdges.append((edgeNums[i], layer_thickness-.00011, layer_thickness*math.tan(angle) ))
                 chamfLIL1[-1].Edges = myEdges                                   #Creates list of all chamfer edges
                 '''
                 Below section takes the chamfered objects and shifts it down .0001, then cuts off that .0001 that isn't chamfered at bottom and creates a new
@@ -1098,6 +1100,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                 placement1.move(FreeCAD.Vector(0,0,-.0001))		                #This defines the movement based off created vector
                 chamfLIL1[-1].Placement = placement1                            #This moves desired object the specificied amount
                 newChamf = FreeCAD.ActiveDocument.addObject("Part::Feature", "tempChamf")
+                #print(topObj.Label)
                 newChamf.Shape = chamfLIL1[-1].Shape.cut(topObj.Shape)          #Cuts the .0001 unchamfered portion on the deposition layer
                 #Need to delete the old chamfer here and add the new one
                 FreeCAD.ActiveDocument.removeObject(chamfNames[-1])             #Deletes the myChamferX object
@@ -1121,22 +1124,38 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
             '''
             botFaceRem = []
             holeFaces = []
+
             for idx, face in enumerate(bottomFaces):                            #Inspects every face that was considered to be a bottom face
+                innerBreak = False
+                #The comparison from these loops works because the hole layers are not on the layerLIL array
                 for obj in layerLIL:                                            #Compares the face to every layer that has been previously created
                     if face.distToShape(obj.Shape)[0] < .1:                     #This comparison allows for multi-layer holes
                         #Part.show(face)                                        #For debugging
                         botFaceRem.append(idx)
+                        innerBreak = True
                         break
+                if innerBreak == False:                                         #If the previous if statement was not true
+                    for obj in FreeCAD.ActiveDocument.Objects[1:]:              #Run through all objects in the document except for the substrate
+                        if obj.Visibility == True:                              #If the object is visibile then it will be used later, so consider it
+                            objLabel = obj.Label
+                            if "my" in objLabel and objLabel != topObj.Label and objLabel != lastDeposited[-1].Label:   #If the object is not the top or last object
+                                #print(objLabel)                                #For debugging
+                                if face.distToShape(obj.Shape)[0] < .001:#and obj.Shape.distToShape(topObj.Shape)[0] < .001:       #This comparison allows for multi-layer holes
+                                    #Part.show(face)                            #For debugging
+                                    #print(obj.Label, topObj.Label)             #For debugging
+                                    botFaceRem.append(idx)
+                                    break
+            #print(botFaceRem)                                                  #For debugging
+            #print(len(bottomFaces))
             for rem in sorted(botFaceRem, reverse=True):                        #Loop to remove the hole faces, in reverse to not mess up indexing
                 holeFaces.append(bottomFaces[rem])                              #Keeps track of all the faces removed, to later compare to
                 bottomFaces.pop(rem)
+            #print(len(bottomFaces))
             #for face in bottomFaces:                                           #For debugging to ensure the first
             #    Part.show(face)
             for face in polygon.Shape.Faces:                                    #Catches additional faces that were not bottom faces and adds them to the array of hole faces
                 for obj in layerLIL:                                            #Again runs through every layer that has been created
                     if face.distToShape(obj.Shape)[0] < .01:
-                        #for faces in holeFaces:                                #For debugging
-                        #    if face != faces
                         holeFaces.append(face)
             '''
             The below for loop can likely be taken out, depening on if the deposition is smooth or if extra edges occur between
@@ -1150,8 +1169,6 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                 #print(param)
                 norm = face.normalAt(param[0],param[1])
                 #print(norm)
-                #if abs(norm[2]) != 0:# != 1 and abs(norm[1]) != 1: #If the face is oriented to one of the sides (something we don't want)
-                #    bottomFaces.append(face)
                 for faceHole in holeFaces:
                     if face.distToShape(faceHole)[0] < .01:
                         faceSurface2 = faceHole.Surface
@@ -1166,10 +1183,12 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                             botFaceRem.append(idx)
             #for face in holeFaces:                                             #For debugging
             #    Part.show(face)
-            for rem in sorted(botFaceRem, reverse=True):
-                holeFaces.append(bottomFaces[rem]) #Does not matter that they are reversed
+            for rem in sorted(botFaceRem, reverse=True):                        #Remove indicies in reverse to ensure correct removal
+                holeFaces.append(bottomFaces[rem])                              #Does not matter that they are reversed
                 bottomFaces.pop(rem)
             #for face in holeFaces:                                             #For debugging
+            #    Part.show(face)
+            #for face in bottomFaces:                                           #For debugging to ensure the correct faces were removed
             #    Part.show(face)
             '''
             The below section takes all the bottom faces of the passed polygon and extrudes them by the desired amount (creating FreeCAD objects for each, required
@@ -1313,7 +1332,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                         Because new objects were created to separate out the edges for chamfering some of the edges might not be going in the same direction
                         For example, one edge that might be shared (the same edge) could actually have firstVertex and lastVertex flipped
                         This is normally not the case after fixing the subtraction issue with not chamfering the entire object height, but if this error does occur
-                        it can be fixed by using the __sortEdges__ (function call might be mispelled) function for FreeCAD .19 and later
+                        it can be fixed by using the __sortEdges__ function for FreeCAD .19 and later
 
                         **Might be able to remove the below if statement due to fixing the .0001 difference issue
                         '''
@@ -1354,6 +1373,8 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                             break
                 for rem in sorted(remHoleEdge, reverse=True):                   #Deletes the indicies in reverse to not mess up the index order
                     del edgeList2[rem]
+                #newWire2 = edgeList2[0].multiFuse(edgeList2[1:])               #Creates a new wire out of all the edges, for debugging
+                #Part.show(newWire2)                                            #Used for debugging, show all the edges on the top boundary
                 '''
                 Below section takes the newly found edges and compares them to the original object. It takes the index of the original object's edges
                 that are equal to the edges in the edgeList2 and uses those to create the chamfer edges. It then chamfers the objects to the specified angle
@@ -1407,7 +1428,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                         myEdges.append((i,layer_thickness+.00005,layer_thickness*math.tan(angle) )) #The .00005 is added for a varience in the hole layer height
                         #print(i)                                               #Prints edge index, for debugging
                 else:                                                           #If the object is angled (layered on top of another feature)
-                    print(dep_obj2.Label)
+                    #print(dep_obj2.Label)
                     angHeight = edgeList2[0].firstVertex().distToShape(dep_obj2.Shape)[0]#topObj.Shape)[0]#dep_obj2.Shape)[0] #Gets distance from the top edge to the deposition layer
                     print(angHeight)
                     for i in edgeNums:                                          #Runs through all the edges on top face as found from above for loop
@@ -1420,7 +1441,7 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
                         and its own angle and sometimes on the thickness
                         '''
                         myEdges.append((i,(angHeight)-.00002,layer_thickness*math.tan(angle)))
-                        print(i)                                               #Prints edge index, for debugging
+                        #print(i)                                               #Prints edge index, for debugging
                 chamfLIL1[-1].Edges = myEdges                                   #Creates list of all chamfer edges
                 FreeCAD.ActiveDocument.recompute()                              #Recompute is basically reload for FreeCAD, reloads all objects in display
                 #chamfLIL1[-1].Shape = chamfLIL1[-1].Shape#.fuse(holeSections)
@@ -1690,14 +1711,14 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     '''Here's the idea. Take the desired objects and extrude them from zero all the way to the highest point + the desired thickness. Then take a temperoary deposition
     which will contain the holes and cut out the bottom and top of the object, leaving only the portion layered inside the hole and on top of the most recent layer.'''
     print("holeDevelop Start")
+    featureNames2= []; featureLIL2 = []
     layerThickness.append(layer_thickness)                                      #Keeps track of the new layer thickness
-    #highestPoint = sp.get_highest_point(False,False)
     highestPoint, highestObj = sp.get_highest_point(True,False)                 #Retrieves the highest Z value and the layer associated with it
-    #print(highestObj.Label)
-    tempDep = deposit(all_polygons_dict, outlineLayer, layer_thickness)            #Creates a temporary depositon to use as a "stamp" to form the features
+    #print(highestObj.Label)                                                    #For debugging
+    tempDep = deposit(all_polygons_dict, outlineLayer, layer_thickness)         #Creates a temporary depositon to use as a "stamp" to form the features
     depHighPoint = (sp.get_highest_point(False,False) - 1)/layer_thickness      #-1 for the deposition thickness, gives total number of cuts needed below Z placement
-    tempDepAdjust = tempDep.Shape.copy()                                       #Copies of deposition, needed for forming the features
-    tempDep2 = tempDep.Shape.copy()                                            #Copies of deposition, needed for forming the features
+    tempDepAdjust = tempDep.Shape.copy()                                        #Copies of deposition, needed for forming the features
+    tempDep2 = tempDep.Shape.copy()                                             #Copies of deposition, needed for forming the features
     overObjects = []
     lowPointLayer = holeLIL[-1].Shape.Vertexes[0].Point[2]                      #Lowest Z point for layer depositing onto
     upShifts = (highestPoint-lowPointLayer)/layer_thickness                     #Gives total number of necessary cuts (above Z) based off the thickness of the layer to deposit on
@@ -1715,6 +1736,9 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
         if bias != 0:                                                           #If a bias has been given then create a new face
             face = sp.biasFeatures(face, bias)                                  #Calls function that biases the feature and returns a new face
         overObjects.append(face.extrude(Base.Vector(0,0,highestPoint+layer_thickness)))
+        #featureNames2.append("overObjects"+str(len(featureNames2)))                 #Creates new feature name
+        #featureLIL2.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames2[-1])) #Creates new feature inside FreeCAD
+        #featureLIL2[-1].Shape = overObjects[-1]
     '''
     The below section takes the copied deposition layer and shifts it down cutting out the features of the objects. It then takes the other copy and shifts
     it up to shape the top have of the new objects. The new objects are then passed to the hole tapering function.
@@ -1729,10 +1753,12 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     totalUpShifts = (int(math.ceil(upShifts))+len(holeLIL))
     for i in range(0,totalUpShifts):
         if i == 0:
-            tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))#+.0005))
-            #for idx,obj in enumerate(overObjects):
-            #    overObjects[idx] = overObjects[idx].cut(tempDep2)
-            #tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness-.0005))
+            tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness+.000075))#-.000075))#-.0001))#+.0005)) #The adjustment number on the end is for FreeCAD, might have to change
+            #Part.show(tempDep2)
+            for idx,obj in enumerate(overObjects):
+                overObjects[idx] = overObjects[idx].cut(tempDep2)
+            tempDep2.Placement.move(FreeCAD.Vector(0,0,-.00015))#.0001))        #The Z value is an adjustment number for FreeCAD, might have to change
+            #Part.show(tempDep2)
         else:
             tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))
         #if "myPlanar" != lastDeposited[-2].Label:
@@ -1741,17 +1767,13 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
         for idx,obj in enumerate(overObjects):
             overObjects[idx] = overObjects[idx].cut(tempDep2)#obj = obj.cut(tempDep)#.Shape)
             #Part.show(overObjects[idx])
-    for idx, newObj in enumerate(overObjects):
+    for idy, newObj in enumerate(overObjects):
         extrusionLIL1.append(newObj)
         featureNames.append("myFeature"+str(len(featureNames)))                 #Creates new feature name
         featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames[-1])) #Creates new feature inside FreeCAD
         featureLIL1[-1].Shape = extrusionLIL1[-1]                               #Adds the feature as the newly "stamped" face
+        featureLIL1[-1].Visibility = False
         print("Before Chamfer")                                                 #For debugging
-        #if "myPlanar" == lastDeposited[-2].Label:
-        #if idx == 3:
-        #if "myPlanar" == lastDeposited[-2].Label:
-        #    taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
-        #elif idx == 2:
         loop1Break = False; loop2Break = False#; loop3Break = False
         curvedCall = False
         bottomFaces = []
@@ -1799,14 +1821,16 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
             if loop1Break == True:
                 break
         if curvedCall == False:
+            #Part.show(featureLIL1[-1].Shape)                                   #For debugging
             taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
         else:
-            print("Object was Non-rectangular and did not get chamfered")
-            #try:
-                #taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
+            #print("Object was Non-rectangular and did not get chamfered")
+            '''try:
+                #Part.show(featureLIL1[-1])
+                taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
                 #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
-            #except:
-                #print("Failed regular taper")
+            except:'''
+            print("Failed regular taper")
             #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
         print("After Chamfer")                                                  #For debugging
     '''
@@ -1818,15 +1842,15 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     depositNames.pop()                                                          #Deletes old object
     lastDeposited.pop()                                                         #Deletes old object
     z_value.append(z_value[-1]+layer_thickness)#-.0001)                         #Updates z_value to next height for building onto -*update for uneven features*
-
     featureCopies = []
     for obj in FreeCAD.ActiveDocument.Objects:                                  #Loops all objects
-        #if "myFeature" in obj.Label:#"newChamf" in obj.Label:                  #If label is not substrate
         if "newChamf" in obj.Label:
             featureCopies.append(obj.Shape)                                     #For debugging
+            #Part.show(obj.Shape)
     layerCopy = featureCopies[0]                                                #Start out with just the first copied layer
     for feature in featureCopies[1:]:                                           #Add subsequent layers to first copied layer
         layerCopy = layerCopy.fuse(feature)                                     #Fuse combines all features together
+        #Part.show(layerCopy)
     layerNames.append("myLayer"+str(len(layerNames)))                           #Creates new feature name
     layerLIL.append(FreeCAD.ActiveDocument.addObject("Part::Feature", layerNames[-1])) #Creates new feature inside FreeCAD
     layerLIL[-1].Shape = layerCopy                                              #Adds previous extrusion and the feature shape'''

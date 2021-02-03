@@ -40,8 +40,8 @@ def get_xy_points(polygon):                                                     
     print("get_xy_points Begin")                                                #For debugging
     pts = []                                                                    #Empty array to house x,y points
     for i in range(0,len(polygon.x)):
-        x=polygon.x[i] /10                                                    #Start conversion to mm
-        y=polygon.y[i] /10                                                    #This reduces inputs to FreeCAD units
+        x=polygon.x[i] /1000                                                    #Start conversion to mm
+        y=polygon.y[i] /1000                                                    #This reduces inputs to FreeCAD units
         pts.append([x,y])
     print("get_xy_points end")                                                  #For debugging
     #print(pts)                                                                 #For debugging
@@ -102,17 +102,19 @@ def get_highest_point(needObj = False, all = False):
     #Maybe make this one for loop?
     maxPoint = 0; allObjects = []
     for objects in FreeCAD.ActiveDocument.Objects:                              #Runs through all objects in the FreeCAD document
-        for vertex in objects.Shape.Vertexes:
-            if vertex.Point[2] > maxPoint:                                      #Could also use Edge.firstVertex().Point[2], Point has (x,y,z) so [0,1,2]
-                maxPoint = vertex.Point[2]                                      #Updates current max height value
-                maxHeightObj = objects                                          #Updates the highest object
-    if all == True:                                                             #If all objects have been requested
-        for objects in FreeCAD.ActiveDocument.Objects:                          #Runs through all objects in the FreeCAD document
+        if objects.Visibility == True:                                          #This limits the scan to only objects that will be used for the final layers
             for vertex in objects.Shape.Vertexes:
-                if vertex.Point[2] == maxPoint:                                 #Could also use Edge.firstVertex().Point[2], Point has (x,y,z) so [0,1,2]
-                    allObjects.append(objects)
-                    break
-        return maxPoint,maxHeightObj, allObjects
+                if vertex.Point[2] > maxPoint:                                  #Could also use Edge.firstVertex().Point[2], Point has (x,y,z) so [0,1,2]
+                    maxPoint = vertex.Point[2]                                  #Updates current max height value
+                    maxHeightObj = objects                                      #Updates the highest object
+    if all == True:                                                             #If all objects have been requested
+        if objects.Visibility == True:                                          #This limits the scan to only objects that will be used for the final layers
+            for objects in FreeCAD.ActiveDocument.Objects:                      #Runs through all objects in the FreeCAD document
+                for vertex in objects.Shape.Vertexes:
+                    if vertex.Point[2] == maxPoint:                             #Could also use Edge.firstVertex().Point[2], Point has (x,y,z) so [0,1,2]
+                        allObjects.append(objects)
+                        break
+            return maxPoint,maxHeightObj, allObjects
     if needObj == True:
         return maxPoint,maxHeightObj
     elif needObj == False:
