@@ -40,8 +40,8 @@ def get_xy_points(polygon):                                                     
     print("get_xy_points Begin")                                                #For debugging
     pts = []                                                                    #Empty array to house x,y points
     for i in range(0,len(polygon.x)):
-        x=polygon.x[i] /1000                                                    #Start conversion to mm
-        y=polygon.y[i] /1000                                                    #This reduces inputs to FreeCAD units
+        x=polygon.x[i] /10                                                    #Start conversion to mm
+        y=polygon.y[i] /10                                                    #This reduces inputs to FreeCAD units
         pts.append([x,y])
     print("get_xy_points end")                                                  #For debugging
     #print(pts)                                                                 #For debugging
@@ -74,8 +74,8 @@ def getOutlineValues(polygon):                                                  
     print("getOutlineValues Begin")                                             #For debugging
     all_points = []                                                             #Empty array to house x,y values
     for i in range(0,len(polygon.x)):
-        x=polygon.x[i] /1000                                                    #Start conversion to mm
-        y=polygon.y[i] /1000                                                    #This reduces inputs to FreeCAD units
+        x=polygon.x[i] /10                                                    #Start conversion to mm
+        y=polygon.y[i] /10                                                    #This reduces inputs to FreeCAD units
         all_points.append([x,y])
     xs = list(set([point[0] for point in all_points])); ys = list(set([point[1] for point in all_points]))  #Seperates x and y points
     x_min = min(xs); x_max = max(xs); y_min = min(ys); y_max = max(ys)                                      #Find the max and minimum values
