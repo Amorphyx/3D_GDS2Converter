@@ -69,8 +69,7 @@ This function creates a planarized layer on top of all the other layers, at a se
 #### Limitations / Work in Progress
 - 3D_GDS2Converter is designed for work for a single layout and may not work properly for multiple different layouts that are not intersecting each other.
 - Some functions of the cross section tool for KLayout have not been implemented (some have no plans to be added at this time).
-- Non-rectangular objects (angles not at 90 degrees) are currently not accepted for chamfering, this is planned for a future version.
-- Biasing of objects may not work completely for non-rectangular objects.
+- Biasing of objects may not work completely for non-rectangular (vertices not at 90 degrees) objects.
 - Fillet has not been implemented (only straight chamfers)
 
 #### Coming Soon / Future Goals
