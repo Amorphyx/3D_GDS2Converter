@@ -111,13 +111,13 @@ depositionThickness = []                                                        
 lastDeposited = []                                                              #Used to keep track of the last layer added (features or deposition)
 
 '''
-Code requires objects to be in microns, with output in FreeCAD's standard (mm).
-Code does not currently work with curved objects and cannot chamfer objects appearing curved (from straight lines). The latter will still cause issues and the object may not appear.
+Code is set up for objects to be in .001 microns, with output in FreeCAD's standard (mm).
+Code does not currently work completely with non-rectangular objects.
 Code may not work for holes created through multiple more than 2 layers. ***Might have fixed
-All layers may be .6um thicker or thinner than designated, due to som FreeCAD limitations with tapering. This also means some features may be up to .6um off as well.
-Bias does not work for complex objects or for curved/appearing curved objects
+All layers may be .6um thicker or thinner than designated, due to some FreeCAD limitations with chamfering. This also means some features may be up to .6um off as well.
+Bias might not work for complex objects or for curved/appearing curved objects
 Currently max layer height is designed for 50 mm, any larger and the deposit function will not work - this can be edited inside the extrude in deposit()
-Expected input units of gds2 file is in microns; other units are accepted, but all points are divided by 1000 to try to convert to FreeCAD native units of mm
+All spatial points are divided by 10 to try to convert to FreeCAD native units of mm
 '''
 
 
@@ -165,8 +165,16 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
             featureNames.append("myFeature"+str(f+numOfFeatNames))                                                #Creates new feature name
             featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames[f+numOfFeatNames])) #Creates new feature inside FreeCAD
             featureLIL1[f+numOfFeat].Shape = extrusionLIL1[f+numOfExt]                                            #Adds previous extrusion and the feature shape
-            print("Before Chamfer")                                             #For debugging
-            loop1Break = False; loop2Break = False#; loop3Break = False
+            print("Before Chamfer")                                                 #For debugging
+            '''
+            Below section runs through the object to determine if the object is rectangular (meaning all 90 degree vertices pre-chamfer) or not. If the object
+            is rectangular then it is chamfered normally (if applicable) and if not then a chamfer is attempted on the object. A failed chamfer will leave the
+            original object in an unchamfered state (allowing the program to continue running), but there is a chance for a successful chamfer which will return
+            an object similar to a regular rectangular object chamfer.
+
+            Rectangular versus non-rectangular is determined by taking the dot between each pair of intersecting edges (at every vertex).
+            '''
+            loop1Break = False; loop2Break = False
             curvedCall = False
             bottomFaces = []
             for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
@@ -200,24 +208,38 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
                             if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
                                 print("Non-rectangular object found, skipping taper")
                                 chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                                tempName = chamfNames[-1]
                                 chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
                                 chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                                tempIndex = len(chamfLIL1)-1
                                 #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
-                                loop1Break = True; loop2Break = True#; loop3Break = True
+                                loop1Break = True; loop2Break = True
                                 curvedCall = True
                                 break
-                        #else:
-                        #    print("Continuing")
+                            #else:
+                            #    print("Continuing")
                     if loop2Break == True:
                         break
                 if loop1Break == True:
                     break
-            if curvedCall == False:
-                taper(featureLIL1[-1], layer_thickness, angle, 0)                   #Passes features to taper function to get tapered, passing 0 for topObj as a placeholder
-            else:
-                print("Object was Non-rectangular and did not get chamfered")
-                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
-            print("After Chamfer")                                              #For debugging
+            if curvedCall == False:                                                 #If object is rectangular
+                #Part.show(featureLIL1[-1].Shape)                                   #For debugging
+                taper(featureLIL1[-1], layer_thickness, angle, highestObj)
+            else:                                                                   #If object is not rectangular
+                #print("Object was Non-rectangular and did not get chamfered")
+                regTaperPass = False                                                #Reset boolean
+                try:
+                    #Part.show(featureLIL1[-1])                                     #For debugging
+                    taper(featureLIL1[-1], layer_thickness, angle, highestObj) #Attempts the chamfer, if true it will delete the extra object made above
+                    regTaperPass = True
+                except:
+                    regTaperPass = False                                            #If the object fails to chamfer then boolean is false and will keep original object
+                    print("Failed regular taper")
+                    #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj) #Future work in progress
+                if regTaperPass:
+                    FreeCAD.ActiveDocument.removeObject(tempName)                   #Deletes the object created in above loops, since it is no longer needed
+                    chamfNames.pop(tempIndex); chamfLIL1.pop(tempIndex)             #Removes the deleted object from local memory
+            print("After Chamfer")                                                  #For debugging
     elif len(FreeCAD.ActiveDocument.Objects) > 1:                               #Already have first layer deposited, these features could be laid on top of previous features
         highestPoint, highestObj = sp.get_highest_point(True,False)             #Finds the highest point and object before the new features are made
         dep_obj = FreeCAD.ActiveDocument.getObject(depositNames[-1])                                #Copies the deposit layer to be used as a "stamp"
@@ -262,8 +284,16 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
             #Part.show(finalFeat.Shape)
             FreeCAD.ActiveDocument.removeObject("myCutObject")                  #Removes the cut object that is not "stamped" yet
 
-            print("Before Chamfer")                                             #For debugging
-            loop1Break = False; loop2Break = False#; loop3Break = False
+            print("Before Chamfer")                                                 #For debugging
+            '''
+            Below section runs through the object to determine if the object is rectangular (meaning all 90 degree vertices pre-chamfer) or not. If the object
+            is rectangular then it is chamfered normally (if applicable) and if not then a chamfer is attempted on the object. A failed chamfer will leave the
+            original object in an unchamfered state (allowing the program to continue running), but there is a chance for a successful chamfer which will return
+            an object similar to a regular rectangular object chamfer.
+
+            Rectangular versus non-rectangular is determined by taking the dot between each pair of intersecting edges (at every vertex).
+            '''
+            loop1Break = False; loop2Break = False
             curvedCall = False
             bottomFaces = []
             for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
@@ -297,29 +327,41 @@ def layerDevelop(all_polygons_dict, layerNum, layer_thickness, angle, bias = 0):
                             if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
                                 print("Non-rectangular object found, skipping taper")
                                 chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                                tempName = chamfNames[-1]
                                 chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
                                 chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                                tempIndex = len(chamfLIL1)-1
                                 #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
-                                loop1Break = True; loop2Break = True#; loop3Break = True
+                                loop1Break = True; loop2Break = True
                                 curvedCall = True
                                 break
-                        #else:
-                        #    print("Continuing")
+                            #else:
+                            #    print("Continuing")
                     if loop2Break == True:
                         break
                 if loop1Break == True:
                     break
-            if curvedCall == False:
-                taper(featureLIL1[-1], layer_thickness, angle, highestObj)          #Calls the taper function passing it the highest object before the new features were made
-            else:
-                print("Object was Non-rectangular and did not get chamfered")
-                #taper(featureLIL1[-1], layer_thickness, angle, highestObj)
-                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
-            print("After Chamfer")                                              #For debugging
-
+            if curvedCall == False:                                                 #If object is rectangular
+                #Part.show(featureLIL1[-1].Shape)                                   #For debugging
+                taper(featureLIL1[-1], layer_thickness, angle, highestObj)
+            else:                                                                   #If object is not rectangular
+                #print("Object was Non-rectangular and did not get chamfered")
+                regTaperPass = False                                                #Reset boolean
+                try:
+                    #Part.show(featureLIL1[-1])                                     #For debugging
+                    taper(featureLIL1[-1], layer_thickness, angle, highestObj) #Attempts the chamfer, if true it will delete the extra object made above
+                    regTaperPass = True
+                except:
+                    regTaperPass = False                                            #If the object fails to chamfer then boolean is false and will keep original object
+                    print("Failed regular taper")
+                    #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj) #Future work in progress
+                if regTaperPass:
+                    FreeCAD.ActiveDocument.removeObject(tempName)                   #Deletes the object created in above loops, since it is no longer needed
+                    chamfNames.pop(tempIndex); chamfLIL1.pop(tempIndex)             #Removes the deleted object from local memory
+            print("After Chamfer")                                                  #For debugging
         FreeCAD.ActiveDocument.removeObject("myStampingObject")             #Removes the stamping surface (previous deposition layer)
     else:
-        print("not complete")
+        print("Invalid inputs, needs a substrate to deposit features on")
 
     z_value.append(z_value[-1]+layer_thickness)#-.0001)                         #Updates z_value to next height for building onto -*update for uneven features*
     '''
@@ -428,7 +470,7 @@ def deposit(all_polygons_dict, sub_layer, dep_thickness):                       
     return depositLIL[-1]
 
 
-#taper does not work with curved objects or objects that appear as curved, not yet at least
+#taper does not yet work with some non-rectangular (object where vertices at not at 90 degrees).
 def taper(polygon, layer_thickness, angle, topObj):                  #Tapers the edges, passed the surface being projected onto, the object being tapered, and the height
     '''
     taper function takes a given object and chamfers the sides of the object to the specified angle (at max object height). The height chamfered can be adjusted
@@ -869,7 +911,7 @@ def taper(polygon, layer_thickness, angle, topObj):                  #Tapers the
                 FreeCAD.ActiveDocument.removeObject("tempChamf")                #Deletes the tempChamf object object
                 print("After obj chamfer")
 
-#taperOverHoles does not work with curved objects or objects that appear as curved, not yet at least
+#taperOverHoles does not yet work with some non-rectangular (object where vertices at not at 90 degrees).
 def taperOverHoles(polygon, layer_thickness, angle, topObj):
     '''
     taperOverHoles function takes a given object and chamfers the sides of the object to the specified angle (at max object height). The height chamfered can be adjusted
@@ -1526,7 +1568,7 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
         #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - layer_thickness
         if "Planar" in holeLayerName.Label:
             for idx, name in enumerate(lastDeposited):      #Finds the object beneath the one being cut through
-                print(holeLayerName.Label, name.Label)
+                #print(holeLayerName.Label, name.Label)
                 if holeLayerName.Label in name.Label:
                     previousLayer = idx - 1
                     break
@@ -1535,65 +1577,23 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
             #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
             #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
             #print(lastDeposited[previousLayer].Label, zVal)
-            print(sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label), sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label))
-            layer_thickness = 3#sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
+            #print(sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label), sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label))
+            #layer_thickness = 3#sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
+            botPoint = holeLayerName.Shape.Vertexes[0].Point[2]
+            topPoint = holeLayerName.Shape.Vertexes[1].Point[2]
+            if round(botPoint,4) >= z_value[-1]-.0005 or round(botPoint,4) <= z_value[-1]+.0005:
+                layer_thickness = topPoint - botPoint
+            else:
+                tempAdjust = z_value[-1] - botPoint
+                layer_thickness = topPoint - botPoint - tempAdjust
         #else:
         zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - layer_thickness
         #for obj in FreeCAD.ActiveDocuments.Objects:
         #zVal finds the total object thickness by taking the height on top of the object being cut minus the height of the object beneath it
         #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
-        '''Below section adds the bias to objects. It takes every vertex and compares it to the next one, one of those vertices gets an addition to x or y
-        and the other vertex gets a subtraction to x or y. This bias currently works as an addition (makes the feature larger) to imitate etching.'''
-        if bias != 0:
-            xChange = False; yChange = False                                    #Booleans used to keep one vertex from changing multiple times along same axis
-            verts = len(polyLayer)
-            xChanges = [bias]*verts; yChanges = [bias]*verts                    #Store changes so they are only updated at the end
-            for idx, point in enumerate(polyLayer):
-                if idx == verts-1:                                              #If looking at last vertex of the shape, the next vertex is the first vertex
-                    next = 0
-                else:
-                    next = idx+1
-                if point[0] == polyLayer[next][0]:                              #Share same x point, update the y-axis values
-                    if yChange == False:
-                        if point[1] > polyLayer[next][1]:                       #Compares actual value, abs value would cause inverse errors if crossing axis
-                            yChanges[idx] = -bias
-                            yChanges[next] = bias
-                            yChange = True
-                        else:
-                            yChanges[idx] = bias
-                            yChanges[next] = -bias
-                            yChange = True
-                    else:
-                        yChange = False
-                else:
-                    yChange = False
-                if point[1] == polyLayer[next][1]:                              #Share same y point, update the x-axis values
-                    if xChange == False:
-                        if point[0] > polyLayer[next][0]:                       #Compares actual value, abs value would cause inverse errors if crossing axis
-                            xChanges[idx] = -bias
-                            xChanges[next] = bias
-                            xChange = True
-                        else:
-                            xChanges[idx] = bias
-                            xChanges[next] = -bias
-                            xChange = True
-                    else:
 
-                        xChange = False
-                else:
-                    xChange = False
-            #print(len(polyLayer),len(xChanges),len(yChanges))                  #For debugging
-            #print(xChanges)                                                    #For debugging
-            #print(yChanges)                                                    #For debugging
-            for id, point2 in enumerate(polyLayer):
-                point2[0] = point2[0] + xChanges[id]
-                point2[1] = point2[1] + yChanges[id]
-                point2.append(zVal)
-            polyLayer[0][0] = polyLayer[-1][0]                                  #Sets the last and first point equal to ensure updates were done properly
-            polyLayer[0][1] = polyLayer[-1][1]                                  #This is required since only the last point (technically 4) gets updated (not 0)
-        else:
-            for point in polyLayer:
-                point.append(zVal)
+        for point in polyLayer:
+            point.append(zVal)
         print("Before layerDevelop Object")                                     #For debugging
         #print(sp.topXY(polyLayer[0][0],polyLayer[0][1],depositNames[-1]), z_value[-1]) #For debugging
         pts=[]
@@ -1601,6 +1601,8 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
             pts.append(FreeCAD.Vector(polyLayer[i][0],polyLayer[i][1],polyLayer[i][2])) #FreeCAD.Vector(x,y,z)
         wire=Part.makePolygon(pts)                                              #Connects all points given above, makes a wire polygon (just a line)
         face=Part.Face(wire)                                                    #Creates a face from the wire above
+        if bias != 0:                                                           #If a bias has been given then create a new face
+            face = sp.biasFeatures(face, bias)                                  #Calls function that biases the feature and returns a new face
         #Part.show(face)                                                        #For debugging
         extrusionLIL1.append(face.extrude(Base.Vector(0,0,layer_thickness+.1))) #Creates an extrusion from the new face
         #Part.show(extrusionLIL1[-1])                                           #Used to show the extrusion object - only used for debugging
@@ -1686,14 +1688,14 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
             insertInd = idx
             break'''
     #lastDeposited[insertInd] = holeLIL[-1]
-    FreeCAD.ActiveDocument.getObject(holeLayerName.Label).Shape = wholeLayer    #Changes the old layer shape (without holes) into the object with holes
     #lastDeposited.append(holeLIL[-1])
     #layerLIL.append(holeLIL[-1])
+    FreeCAD.ActiveDocument.getObject(holeLayerName.Label).Shape = wholeLayer    #Changes the old layer shape (without holes) into the object with holes
 
 
-#Curved objects are not currently working with the holeDevelop function
-#The holeDevelop function takes roughy 65+% of the processing time of the program, including time for taperOverHoles
-#The run time of the below function MUST be improved
+#Non-rectangular objects are not currently working with the holeDevelop function
+#The holeDevelop function takes roughy 65% of the processing time of the program, including time for taperOverHoles
+#The run time of the below function should be improved - currently trying to find a projection method that can work with python scripts
 '''
 The below function will not work if account for the .0001 subtraction being made in the layerDevelop function. Meaning if the extrusion
 in layerDevelop gets the additional .0001 that is subtracted at the end, then this function fails to work. The reason is due to
@@ -1774,7 +1776,15 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
         featureLIL1[-1].Shape = extrusionLIL1[-1]                               #Adds the feature as the newly "stamped" face
         featureLIL1[-1].Visibility = False
         print("Before Chamfer")                                                 #For debugging
-        loop1Break = False; loop2Break = False#; loop3Break = False
+        '''
+        Below section runs through the object to determine if the object is rectangular (meaning all 90 degree vertices pre-chamfer) or not. If the object
+        is rectangular then it is chamfered normally (if applicable) and if not then a chamfer is attempted on the object. A failed chamfer will leave the
+        original object in an unchamfered state (allowing the program to continue running), but there is a chance for a successful chamfer which will return
+        an object similar to a regular rectangular object chamfer.
+
+        Rectangular versus non-rectangular is determined by taking the dot between each pair of intersecting edges (at every vertex).
+        '''
+        loop1Break = False; loop2Break = False
         curvedCall = False
         bottomFaces = []
         for face in featureLIL1[-1].Shape.Faces:                                #Searches all the faces in the passed polygon looking for just bottom faces
@@ -1808,10 +1818,12 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
                         if math.ceil(cornerAngle) != math.floor(cornerAngle):#isinstance(angle, int) == False and angle != 0.0:
                             print("Non-rectangular object found, skipping taper")
                             chamfNames.append("newChamf"+str(len(chamfNames)))                                     #Creates new chamfer name for the fixed object
+                            tempName = chamfNames[-1]
                             chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
                             chamfLIL1[-1].Shape = featureLIL1[-1].Shape
+                            tempIndex = len(chamfLIL1)-1
                             #holeSections = chamfLIL1[-1].Shape.cut(polygon.Shape)
-                            loop1Break = True; loop2Break = True#; loop3Break = True
+                            loop1Break = True; loop2Break = True
                             curvedCall = True
                             break
                         #else:
@@ -1820,18 +1832,23 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
                     break
             if loop1Break == True:
                 break
-        if curvedCall == False:
+        if curvedCall == False:                                                 #If object is rectangular
             #Part.show(featureLIL1[-1].Shape)                                   #For debugging
             taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
-        else:
+        else:                                                                   #If object is not rectangular
             #print("Object was Non-rectangular and did not get chamfered")
-            '''try:
-                #Part.show(featureLIL1[-1])
-                taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj)
-                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
-            except:'''
-            print("Failed regular taper")
-            #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj)
+            regTaperPass = False                                                #Reset boolean
+            try:
+                #Part.show(featureLIL1[-1])                                     #For debugging
+                taperOverHoles(featureLIL1[-1], layer_thickness, angle, highestObj) #Attempts the chamfer, if true it will delete the extra object made above
+                regTaperPass = True
+            except:
+                regTaperPass = False                                            #If the object fails to chamfer then boolean is false and will keep original object
+                print("Failed regular taper")
+                #taperNonRectangularObjects(featureLIL1[-1], layer_thickness, angle, highestObj) #Future work in progress
+            if regTaperPass:
+                FreeCAD.ActiveDocument.removeObject(tempName)                   #Deletes the object created in above loops, since it is no longer needed
+                chamfNames.pop(tempIndex); chamfLIL1.pop(tempIndex)             #Removes the deleted object from local memory
         print("After Chamfer")                                                  #For debugging
     '''
     The below section cleans up the extra deposition layer created to shape the new objects. The new objects are then fused into a single layer and returned.
@@ -1859,23 +1876,7 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
     print("holeDevelop End")
     return layerLIL[-1]
 
-def layerName(layer_string): #Gets passed a string holding the layer specification as specified in the gds (txt) file
-    return "layer"+str(layer_string.split("/")[0])
 
-def isFloat(num): #Determines if the passed variable can be cast as a float
-    try:
-        i = float(num)
-    except:
-        return False
-    return True
-
-
-def isInt(num): #Determines if the passed variable can be cast as an int
-    try:
-        i = int(num)
-    except:
-        return False
-    return True
 
 def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
     '''Layer thickness must be the first argument inside of the etch arguments
@@ -1891,11 +1892,19 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
     outlineHold = [[0,0],[0,0]]
     for poly in all_polygons_dict:
         outline = sp.getOutlineValues(all_polygons_dict[poly][0])#layer[0])
-        if outline[0] < outlineHold[0] or outline[1] > outlineHold[1]:
+        #print(outline[0])
+        #print(poly, outline)
+        #if (outline[0] <= outlineHold[0] < [0,0]) or (outline[1] >= outlineHold[1]  > [0,0]):
+        if (outline[0][0] <= outlineHold[0][0] and outline[0][1] <= outlineHold[0][1]) \
+            or (outline[1][0] >= outlineHold[1][0] and outline[1][1] >= outlineHold[1][1]):
+            #print("inside if")
+            #print(outlineHold)
             outlineHold = [outline[0],outline[1]]
+            #print(poly, outlineHold)
             outlineLayer = poly
-    print(outlineHold)
-    print(outlineLayer)
+    #print(all_polygons_dict)
+    #print(outlineHold)
+    #print(outlineLayer)
     #return
     with open(filepath) as myfile:                      #Opens and closes file from gds2 Filepath
         text = myfile.readlines()                       #Reads all lines, line by line
@@ -1946,8 +1955,8 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
         elif "layer(" in line: #Some layer function setting initial names, do we need this right now?
             #print("Incomplete, but do we need these layer names?")
             xsLayerNames.append([line.split("=")[0],0])
-            print(layerName(line.split("\"")[1].split(")")[0]))
-            xsLayerNames[-1][1] = layerName(line.split("\"")[1].split(")")[0])
+            #print(layerName(line.split("\"")[1].split(")")[0]))
+            xsLayerNames[-1][1] = sp.layerName(line.split("\"")[1].split(")")[0])
             #print(xsLayerNames[-1])
         elif "deposit(" in line: #Asking for a deposition, might be for building a layer
             print("Found Deposition")
@@ -1978,7 +1987,7 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
             print("Lay thick is %s and xslayerName is %s" % (layer_thickness, xslayerName))
             if "taper" in etchArg:
                 ang = etchArg.split(":taper=>")[1].split(",")[0]
-                print(ang)
+                #print(ang)
                 angle = math.pi*float(ang)/180
             else:
                 angle = 0 #Need to implement this into the layerDevelop function
@@ -1991,7 +2000,7 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
                         break
             else:
                 biasVal = 0
-            print(line)
+            #print(line)
             if "inverted" in line: #Feature depositions
                 if len(holeLIL) == 0: #If no holes have been made yet
                     print("No holes before deposition")
@@ -2004,7 +2013,7 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
                     sp.remove_objs()
                 else:
                     #print(angle)
-                    print(xslayerName, layer_thickness, angle, biasVal)
+                    #print(xslayerName, layer_thickness, angle, biasVal)
                     #holeDevelop(all_polygons_dict, xslayerName, layer_thickness, angle, outlineLayer, biasVal)
                     for idx, grouping in enumerate(varNames):
                         if grouping[1] == 0:
@@ -2016,15 +2025,18 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
                     holeLayName = etchArg.split(":into=>")[1].split(")")[0]
                     for idx, var in enumerate(varNames):
                         print("Comparing " + str(var[0]) + " to " +str(holeLayName))
-                        if str(var[0]) == str(holeLayName):
+                        if str(var[0]) == str(holeLayName) and varNames[idx][1] != 0: #This second part was added because of duplicate entries, might cause issues later
                             holeLay = varNames[idx][1]
+                            #print(varNames)
+                            #print(holeLay)
+                            #print(varNames[idx][0])
                             #print(holeLay.Label)
                             break
                 else:
                     print("Missing the layer to cut into")
                 if len(holeLIL) > 0 and biasVal != 0: #Takes into account the effects of depositions being .0005 off (gets rid of a lip that forms between multi-layer holes)
                     biasVal = biasVal #- .0006
-                print(xslayerName, holeLay.Label, layer_thickness, biasVal)
+                #print(xslayerName, holeLay.Label, layer_thickness, biasVal)
                 #print(depositLIL[-2].Label)
                 #holeCreation(all_polygons_dict, "layer3", layer_thickness,  math.pi*45/180,depositLIL[-2], 0)
                 holeCreation(all_polygons_dict, xslayerName, layer_thickness, angle, holeLay, biasVal)#depositLil and layer3 need to become holeLay and xslayerName
@@ -2042,9 +2054,9 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
             line = line.rstrip()
             xsVariables.append([line.split("=")[0],0])
             xsVariables[-1][1] = line.split("=")[1]
-            if isInt(xsVariables[-1][1]):
+            if sp.isInt(xsVariables[-1][1]):
                 xsVariables[-1][1] = int(xsVariables[-1][1])
-            elif isFloat(xsVariables[-1][1]):
+            elif sp.isFloat(xsVariables[-1][1]):
                 xsVariables[-1][1] = float(xsVariables[-1][1])
             else:
                 inlineVariables = []
@@ -2060,9 +2072,10 @@ def tempXSReader(filepath,all_polygons_dict, outputPath, lyp_info):
                         #print("Final expression " +expression)
                 xsVariables[idx][1] = float(eval(expression))#eval(str(exec(expression)))
     for rename in varNames:
-        featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", rename[0])) #Creates new feature inside FreeCAD
-        featureLIL1[-1].Shape = rename[1].Shape
-        FreeCAD.ActiveDocument.removeObject(rename[1].Label)
+        if rename[1] != 0:
+            featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", rename[0])) #Creates new feature inside FreeCAD
+            featureLIL1[-1].Shape = rename[1].Shape
+            FreeCAD.ActiveDocument.removeObject(rename[1].Label)
     objToDel = []
     possibleColors = [(0.0,0.0,0.0),(1.0,0.0,0.0),(0.0,1.0,0.0),(0.0,0.0,1.0),(1.0,1.0,0.0),(1.0,0.0,1.0),(0.0,1.0,1.0),\
         (1.0,1.0,1.0),(0.36,0.82,0.37),(0.5,0.5,0.2),(0.7,0.3,0.2),(0.1,0.7,0.5),\

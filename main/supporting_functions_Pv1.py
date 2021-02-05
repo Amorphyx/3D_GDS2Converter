@@ -3,7 +3,8 @@ from FreeCAD import Base                                                        
 import FreeCAD
 import FreeCADGui
 import sys, importlib                                                           #Used for importing and reloading modules
-
+import numpy as np
+import math
 class Polygon:                                                                  #Creates polygons with individual ids
     def __init__(self, xf, yf, idf):                                            #Initialize these three variables when creating class
         self.x = xf
@@ -149,10 +150,28 @@ def remove_objs():                                                              
             FreeCAD.ActiveDocument.removeObject(label)
         if "myChamf" in label:
             FreeCAD.ActiveDocument.removeObject(label)
+        if "tempChamf" in label:
+            FreeCAD.ActiveDocument.removeObject(label)
     #[FreeCAD.ActiveDocument.removeObject(label) for label in labels if "myFeature" in label]
     #[FreeCAD.ActiveDocument.removeObject(label) for label in labels if "tempObj" in label]
     #[FreeCAD.ActiveDocument.removeObject(label) for label in labels if "SillyName" in label]
 
+def layerName(layer_string): #Gets passed a string holding the layer specification as specified in the gds (txt) file
+    return "layer"+str(layer_string.split("/")[0])
+
+def isFloat(num): #Determines if the passed variable can be cast as a float
+    try:
+        i = float(num)
+    except:
+        return False
+    return True
+
+def isInt(num): #Determines if the passed variable can be cast as an int
+    try:
+        i = int(num)
+    except:
+        return False
+    return True
 
 def biasFeatures(feature, bias):                                                #Uses edge comparisons to bias a passed face object
     '''
