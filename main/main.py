@@ -55,27 +55,27 @@ work.exec_()
 dir_path = work.currentEnvironment #os.path.dirname(os.path.realpath(__file__)) #Sets environment for import modules
 #print(dir_path)
 sys.path.append(dir_path)                                                       #Adds the path of our modules to the standard system module path
-import input_files_Pv1 as files                                                 #Contains all functions for reading the 3 input files
-import supporting_functions_Pv1 as sp                                           #Contains various supporting functions called from multiple modules
-import bulk_Pv1 as bulk                                                         #Holds the bulk function which creates a substrate
-import planarize_Pv1 as planar                                                  #Creates a planarized layer on the top
+import input_files as files                                                 #Contains all functions for reading the 3 input files
+import supporting_functions as sp                                           #Contains various supporting functions called from multiple modules
+import bulk as bulk                                                         #Holds the bulk function which creates a substrate
+import planarize as planar                                                  #Creates a planarized layer on the top
 '''If an error occurs after an update to an imported module then the module likely holds the error, even though FreeCAD does not say that'''
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['input_files_Pv1'])                            #Reloads any changes in modules
+    importlib.reload(sys.modules['input_files'])                            #Reloads any changes in modules
 except:
-    print("Reload not needed for input_files_Pv1")
+    print("Reload not needed for input_files")
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['supporting_functions_Pv1'])                   #Reloads any changes in modules
+    importlib.reload(sys.modules['supporting_functions'])                   #Reloads any changes in modules
 except:
-    print("Reload not needed for supporting_functions_Pv1")
+    print("Reload not needed for supporting_functions")
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['bulk_Pv1'])                                   #Reloads any changes in modules
+    importlib.reload(sys.modules['bulk'])                                   #Reloads any changes in modules
 except:
-    print("Reload not needed for bulk_Pv1")
+    print("Reload not needed for bulk")
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['planarize_Pv1'])                              #Reloads any changes in modules
+    importlib.reload(sys.modules['planarize'])                              #Reloads any changes in modules
 except:
-    print("Reload not needed for planarize_Pv1")
+    print("Reload not needed for planarize")
 
 '''
 __author__ = ""
@@ -111,13 +111,12 @@ depositionThickness = []                                                        
 lastDeposited = []                                                              #Used to keep track of the last layer added (features or deposition)
 
 '''
-Code is set up for objects to be in .001 microns, with output in FreeCAD's standard (mm).
-Code does not currently work completely with non-rectangular objects.
+Code may not work with some non-rectangular objects
 Code may not work for holes created through multiple more than 2 layers. ***Might have fixed
-All layers may be .6um thicker or thinner than designated, due to some FreeCAD limitations with chamfering. This also means some features may be up to .6um off as well.
-Bias might not work for complex objects or for curved/appearing curved objects
+All layers may be .6um thicker or thinner than designated, due to some FreeCAD limitations with tapering.
+Bias might not work for curved objects or objects that appear curved (made from straight lines)
 Currently max layer height is designed for 50 mm, any larger and the deposit function will not work - this can be edited inside the extrude in deposit()
-All spatial points are divided by 10 to try to convert to FreeCAD native units of mm
+Input units are important, read the README file on the GitHub page to see more.
 '''
 
 
@@ -1534,7 +1533,6 @@ def taperOverHoles(polygon, layer_thickness, angle, topObj):
         chamfLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", chamfNames[-1]))    #Creates new feature inside FreeCAD, must be feature and not a chamfer
         chamfLIL1[-1].Shape = polygon.Shape
 
-'''Some comment updates need to be made here when closer to finalizing the function'''
 def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerName, bias = 0):
     '''
     holeCreation function takes an already created layer and makes holes (vias) in that layer. The holes are only created one layer at a time so multi-layered
@@ -1554,43 +1552,23 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
     #print(holeLayerName.Label)                                                 #For debugging
     holeLayer = holeLayerName.Shape.copy()                                      #Creates a copy of the layer that needs the holes
     #Part.show(holeLayerName.Shape)                                             #For debugging
-    #poly =sp.get_xy_points(all_polygons_dict[layerNum][0])
-    '''for point in holeLayerName.Shape.Vertexes:
-        if round(poly[0][0],4) == round(point.Point[0],4) and round(poly[0][1],4) == round(point.Point[1],4):
-            zVal = sp.topXY(poly[0][0],poly[0][1],holeLayerName.Label) - layer_thickness
-            break'''
-    #zVal = sp.topXY(holeLayerName.Shape.Vertexes[0].Point[0], holeLayerName.Shape.Vertexes[0].Point[1], holeLayerName.Label) - layer_thickness
-    for f in range(0,len(all_polygons_dict[layerNum])): #Goes through all polygons in given key (layerNum)
-        polyLayer = sp.get_xy_points(all_polygons_dict[layerNum][f])   #Converts all to mm
-        #z_value = 3.0
+    for f in range(0,len(all_polygons_dict[layerNum])):                         #Goes through all polygons in given key (layerNum)
+        polyLayer = sp.get_xy_points(all_polygons_dict[layerNum][f])            #Converts all to mm
         '''zVal needs to find the topXY point for the given obj to create holes in and then move down by layer_thickness, this should be for every Z maybe?'''
-        #zVal = holeLayer.Shape.Vertexes[0].Point[2]#sp.topXY(polyLayer[0][0],polyLayer[0][1],depositNames[-1]) #Finds the highest point at given X,Y value and uses it as height
-        #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - layer_thickness
         if "Planar" in holeLayerName.Label:
-            for idx, name in enumerate(lastDeposited):      #Finds the object beneath the one being cut through
+            for idx, name in enumerate(lastDeposited):                          #Finds the object beneath the one being cut through
                 #print(holeLayerName.Label, name.Label)
                 if holeLayerName.Label in name.Label:
                     previousLayer = idx - 1
                     break
-            #maxH =
-            #print()
-            #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
-            #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
-            #print(lastDeposited[previousLayer].Label, zVal)
-            #print(sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label), sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label))
-            #layer_thickness = 3#sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
-            botPoint = holeLayerName.Shape.Vertexes[0].Point[2]
-            topPoint = holeLayerName.Shape.Vertexes[1].Point[2]
+            botPoint = holeLayerName.Shape.Vertexes[0].Point[2]                 #Finds the lowest Z value in the object
+            topPoint = holeLayerName.Shape.Vertexes[1].Point[2]                 #Finds the z value of the point directly above it, this defines the thickness
             if round(botPoint,4) >= z_value[-1]-.0005 or round(botPoint,4) <= z_value[-1]+.0005:
-                layer_thickness = topPoint - botPoint
+                layer_thickness = topPoint - botPoint                           #Finds layer thickness based off the two previous points
             else:
-                tempAdjust = z_value[-1] - botPoint
-                layer_thickness = topPoint - botPoint - tempAdjust
-        #else:
-        zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - layer_thickness
-        #for obj in FreeCAD.ActiveDocuments.Objects:
-        #zVal finds the total object thickness by taking the height on top of the object being cut minus the height of the object beneath it
-        #zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - sp.topXY(polyLayer[0][0], polyLayer[0][1], lastDeposited[previousLayer].Label)
+                tempAdjust = z_value[-1] - botPoint                             #If the bottom point was not at the expected height then make an adjustment
+                layer_thickness = topPoint - botPoint - tempAdjust              #Find the new layer thickness with the adjustment value
+        zVal = sp.topXY(polyLayer[0][0], polyLayer[0][1], holeLayerName.Label) - layer_thickness    #Determines the height placement of the via base
 
         for point in polyLayer:
             point.append(zVal)
@@ -1658,20 +1636,8 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
     layer as a copy of the edited layer (now with holes). The clean up deletes all the objects created in this function except for the final
     layer with holes, it also deletes the additions to the hole arrays (see global arrays) except for the addition of the final layer with holes.
     '''
-    '''holeLayer.Placement.move(FreeCAD.Vector(0,0,.0005))#holeFuse.Placement.move(FreeCAD.Vector(0,0,.0005))'''
-    '''for obj in FreeCAD.ActiveDocument.Objects:
-        if "myChamf" in obj.Label:
-            wholeLayer = wholeLayer.cut(obj.Shape)'''
-    #wholeLayer = wholeLayer.cut(chamfLIL1[-rev].Shape)
     wholeLayer = holeLayer.cut(holeFuse)#layerLIL[-1].Shape)#holeFuse)#wholeLayer.cut(chamfLIL1[-1])#holeFuse)
-    #Part.show(wholeLayer)
-    '''wholeLayer.Placement.move(FreeCAD.Vector(0,0,-.001))#holeFuse.Placement.move(FreeCAD.Vector(0,0,-.001))
-    wholeLayer = wholeLayer.cut(holeFuse)
-    wholeLayer.Placement.move(FreeCAD.Vector(0,0,.0005))'''
-    #Part.show(wholeLayer)
     FreeCADGui.ActiveDocument.getObject(holeLayerName.Label).Visibility = False #Turns off visibility of the layer expecting to get holes cut in it
-    #depositLIL.pop()
-    #depositNames.pop()
     labels = [obj.Label for obj in FreeCAD.ActiveDocument.Objects]              #Grabs all labels from the current Document
     for label in labels:
         if "myHole" in label:                                                   #If the object is a hole object, delete it
@@ -1682,24 +1648,19 @@ def holeCreation(all_polygons_dict, layerNum, layer_thickness, angle, holeLayerN
     holeNames.append("myLayerHole"+str(len(holeNames)))                         #Creates new feature name
     holeLIL.append(FreeCAD.ActiveDocument.addObject("Part::Feature", holeNames[-1])) #Creates new feature inside FreeCAD
     holeLIL[-1].Shape = wholeLayer                                              #Sets the new FreeCAd feature shape to the finalized layer
-    '''insertInd = 0
-    for idx, deps in enumerate(lastDeposited):
-        if holeLayerName.Label == deps.Label:
-            insertInd = idx
-            break'''
-    #lastDeposited[insertInd] = holeLIL[-1]
-    #lastDeposited.append(holeLIL[-1])
-    #layerLIL.append(holeLIL[-1])
     FreeCAD.ActiveDocument.getObject(holeLayerName.Label).Shape = wholeLayer    #Changes the old layer shape (without holes) into the object with holes
 
 
-#Non-rectangular objects are not currently working with the holeDevelop function
-#The holeDevelop function takes roughy 65% of the processing time of the program, including time for taperOverHoles
+#Non-rectangular objects might not work with the holeDevelop function
+#The holeDevelop function takes roughy 50% of the processing time of the program, when including time for taperOverHoles
 #The run time of the below function should be improved - currently trying to find a projection method that can work with python scripts
 '''
 The below function will not work if account for the .0001 subtraction being made in the layerDevelop function. Meaning if the extrusion
 in layerDevelop gets the additional .0001 that is subtracted at the end, then this function fails to work. The reason is due to
 an issue in the taperOverHoles (as found so far), but has not been narrowed completely. It is likely an issue with either height or value comparisons.
+
+**The above issue has been partially fixed, but it can still occur at times. Currently the adjustment for the .0001 subtraction is not being made to ensure
+a more stable run
 '''
 def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLayer, bias = 0):
     '''The holeDevelop function creates all objects layered on top of holes. It can also create flat object on the same layer, and calls its own taper function.
@@ -1742,34 +1703,29 @@ def holeDevelop(all_polygons_dict, layerNum, layer_thickness, angle, outlineLaye
         #featureLIL2.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames2[-1])) #Creates new feature inside FreeCAD
         #featureLIL2[-1].Shape = overObjects[-1]
     '''
-    The below section takes the copied deposition layer and shifts it down cutting out the features of the objects. It then takes the other copy and shifts
-    it up to shape the top have of the new objects. The new objects are then passed to the hole tapering function.
+    The below section takes the copied deposition layer and shifts it down, fusing copies together, before cutting out the bottom shape
+    of the features. It then takes the other copy and shifts it up, fusing copies together, before cutting out the top of the features.
+    The new objects are then passed to the hole tapering function.
     '''
-    for i in range(0,int(math.ceil(depHighPoint/layer_thickness))):             #Shift down the number of times necessary to shape the lower half of the object
-        tempDepAdjust.Placement.move(FreeCAD.Vector(0,0,-layer_thickness))
-        #Part.show(tempDepAdjust)
-        for idx,obj in enumerate(overObjects):
-            overObjects[idx] = overObjects[idx].cut(tempDepAdjust)#obj = obj.cut(tempDepAdjust)#.Shape)
-    #tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))
-    #Part.show(tempDep2)
-    totalUpShifts = (int(math.ceil(upShifts))+len(holeLIL))
-    for i in range(0,totalUpShifts):
-        if i == 0:
-            tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness+.000075))#-.000075))#-.0001))#+.0005)) #The adjustment number on the end is for FreeCAD, might have to change
-            #Part.show(tempDep2)
-            for idx,obj in enumerate(overObjects):
-                overObjects[idx] = overObjects[idx].cut(tempDep2)
-            tempDep2.Placement.move(FreeCAD.Vector(0,0,-.00015))#.0001))        #The Z value is an adjustment number for FreeCAD, might have to change
-            #Part.show(tempDep2)
-        else:
-            tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))
-        #if "myPlanar" != lastDeposited[-2].Label:
-        #    Part.show(tempDep2)
-        #Part.show(tempDep2)
-        for idx,obj in enumerate(overObjects):
-            overObjects[idx] = overObjects[idx].cut(tempDep2)#obj = obj.cut(tempDep)#.Shape)
-            #Part.show(overObjects[idx])
-    for idy, newObj in enumerate(overObjects):
+    tempDepAdjust.Placement.move(FreeCAD.Vector(0,0,-layer_thickness))          #Initial movement of copied deposition
+    baseLayers = tempDepAdjust.copy()                                           #First layer of the bottom cutting block
+    for i in range(0,int(math.ceil(depHighPoint/layer_thickness))-1):           #Shift down the number of times necessary to shape the lower half of the object
+        tempDepAdjust.Placement.move(FreeCAD.Vector(0,0,-layer_thickness))      #Moves down layer_thickness, which is the deposition thickness for this deposition
+        baseLayers = baseLayers.fuse(tempDepAdjust.copy())                      #Fuses a copy of the moved deposition layer to create the cutting block
+        #Part.show(tempDepAdjust)                                               #For debugging
+    for idx,obj in enumerate(overObjects):                                      #Loops through all the feature objects and cuts out the bottom cutting block
+        overObjects[idx] = overObjects[idx].cut(baseLayers)
+
+    totalUpShifts = (int(math.ceil(upShifts))+len(holeLIL))-1                   #Finds the number of times a shift/copy needs to occur to cut the top of features
+    tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))                #Initial movement, sets the final thickness of the features being cut
+    topLayers = tempDep2.copy()                                                 #First layer of the top cutting block
+    for i in range(0,totalUpShifts):                                            #Shifts up number of times necessary to shape the top half of features
+        tempDep2.Placement.move(FreeCAD.Vector(0,0,layer_thickness))            #Moves up layer_thickness which is the deposition thickness for this deposition
+        topLayers = topLayers.fuse(tempDep2.copy())                             #Fuses a copy of the moved deposition layer to create the top cutting block
+    for idx,obj in enumerate(overObjects):                                      #Loops through all the feature objects and cuts out the top cutting block
+        overObjects[idx] = overObjects[idx].cut(topLayers)
+
+    for idy, newObj in enumerate(overObjects):                                  #Loops through all objects and creates a new FreeCAD feature object for each
         extrusionLIL1.append(newObj)
         featureNames.append("myFeature"+str(len(featureNames)))                 #Creates new feature name
         featureLIL1.append(FreeCAD.ActiveDocument.addObject("Part::Feature", featureNames[-1])) #Creates new feature inside FreeCAD
