@@ -3,7 +3,7 @@
 
 
 ## Requirements
-3D_GDS2Converter was built on FreeCAD 0.19+; however, it should work with FreeCAD 0.18+ as well. Additionally 2 input files are required - a GDS2 text file (*.txt) and a XSection script (*.xs). A layer properties file is optional, but can define colors for layers (otherwise colors are automatically assigned).
+3D_GDS2Converter was built on FreeCAD 0.19+. Additionally 2 input files are required - a GDS2 text file (*.txt) and a XSection script (*.xs). A layer properties file is optional, but can define colors for layers (otherwise colors are automatically assigned).
 
 
 ## Setup and Usage Instructions
