@@ -10,7 +10,7 @@
 3D_GDS2Converter is currently setup to use as a FreeCAD Macro.
 
 To run the program, download or clone the repository files to any local location. _Note: Only the "main" folder is required._
-Open FreeCAD and go to Macro -> Macros... then select Create and choose a name with the Python extension (.py).
+Open FreeCAD and go to Macro -> Macros... then select Create and choose a name.
 
 ![alt text][macroGIF]
 
@@ -21,7 +21,7 @@ Once the location of the supporting modules has been selected, a menu for select
 _Note: The program is currently designed on a .001 micron scale. To use a different scale go to the supporting_functions_PvX script and change the division value (from 10) to the desired value (relative to thickness) inside the get_xy_points function._
 
 The code has the option to export all final objects as STEP files, each object will be it's own STEP file so that they can be imported and viewed as individual layers. When
-running the program a message will pop up requesting if the objects should be exported - click Affirmative and select the output folder and they will be exported to that folder.
+running the program a message will pop up requesting if the objects should be exported - click Affirmative and select the output folder and they will be exported to that folder. All objects can also be manually exported after the program finishes running.
 
 
 # Current Features
@@ -70,7 +70,8 @@ This function creates a planarized layer on top of all the other layers, at a se
 - 3D_GDS2Converter is designed for work for a single layout and may not work properly for multiple different layouts that are not intersecting each other.
 - Some functions of the cross section tool for KLayout have not been implemented (some have no plans to be added at this time).
 - Biasing of objects may not work completely for non-rectangular (vertices not at 90 degrees) objects.
-- Fillet has not been implemented (only straight chamfers)
+- Fillet has not been implemented (only straight chamfers).
+- Some curved objects or objects that appear curved can be chamfered, but those that cannot be chamfered will appear in final layout with no chamfers. 
 
 #### Coming Soon / Future Goals
 - FreeCAD AddOn support.
