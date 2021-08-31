@@ -4,10 +4,10 @@ import FreeCAD
 import FreeCADGui
 import sys, importlib                                                           #Used for importing and reloading modules
 try:                                                                            #Only runs reload if it is needed
-    importlib.reload(sys.modules['supporting_functions_Pv1'])                    #Reloads any changes in modules
+    importlib.reload(sys.modules['supporting_functions'])                    #Reloads any changes in modules
 except:
-    print("Reload not needed for supporting_functions_Pv1")
-import supporting_functions_Pv1 as sp
+    print("Reload not needed for supporting_functions")
+import supporting_functions as sp
 
 def bulk(all_polygons_dict, layerNum):                                                    #Creates the base layer (substrate)
     '''
