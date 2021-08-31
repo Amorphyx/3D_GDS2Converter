@@ -4,10 +4,10 @@ import operator                                                                 
 import re                                                                       #Regex, used for sorting and parsing
 import sys, importlib                                                           #Used for importing and reloading modules
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['supporting_functions_Pv1'])                    #Reloads any changes in modules
+    importlib.reload(sys.modules['supporting_functions'])                    #Reloads any changes in modules
 except:
-    print("Reload not needed for supporting_functions_Pv1")
-import supporting_functions_Pv1 as sp
+    print("Reload not needed for supporting_functions")
+import supporting_functions as sp
 
 def extract_gds2_info(filepath):                                                #Extracts information from the gds2 file, requires .txt format
     print("extract_gds2_info Start")                                            #For debugging
