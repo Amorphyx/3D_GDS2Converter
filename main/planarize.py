@@ -4,10 +4,10 @@ import FreeCAD
 import FreeCADGui
 import sys, importlib                                                           #Used for importing and reloading modules
 try:                                                                            #Only runs reload if it is needed (not needed on first run through)
-    importlib.reload(sys.modules['supporting_functions_Pv1'])                    #Reloads any changes in modules
+    importlib.reload(sys.modules['supporting_functions'])                    #Reloads any changes in modules
 except:
-    print("Reload not needed for supporting_functions_Pv1")
-import supporting_functions_Pv1 as sp
+    print("Reload not needed for supporting_functions")
+import supporting_functions as sp
 
 #planarNames = []                                                                #Can be used to hold the names of multiple planarized layers
 #planarLIL = []                                                                  #Can be used to hold multiple planar layer objects
